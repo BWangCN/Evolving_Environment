@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.so
+
+# Virtual environments
+venv/
+.venv/
+env/
+conda_env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (large files)
+data/
+outputs/
+checkpoints/
+*.ply
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+
+# Logs
+logs/
+wandb/
+*.log
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Secrets
+.env
+*.key
