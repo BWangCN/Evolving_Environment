@@ -1,6 +1,6 @@
 # 3DGS-EvoHome Technical Decisions
 
-> **Last Updated:** March 16, 2026
+> **Last Updated:** March 17, 2026
 > **Synced with:** [3DGS_Timeline.md](3DGS_Timeline.md) | [progress.md](progress.md) | [pipeline_gap_analysis.md](pipeline_gap_analysis.md)
 
 ---
@@ -34,18 +34,25 @@
 - **Why not gsplat only (方案 C):** Too much from-scratch engineering for 10-week timeline
 - **Date:** Mar 16, 2026
 
-### D4. Development Environment
-- **Windows 4080 (local):** 3DGS validation, documentation, quick iteration — **via WSL2 (Ubuntu 22.04)**
-- **Linux 5090 (dev machine):** Large-scale 3DGS reconstruction, VLA inference validation
-- **GMU Hopper (A100 cluster):** VLA finetuning (LoRA + TFA), EvoHome-Bench full evaluation, batch rendering at scale
-- **Reason for WSL2:** Gaussian Grouping native Windows requires 4-5 file patches + DEVA has Ubuntu-only dependencies; WSL2 uses Windows GPU driver directly with zero extra effort
-- **Date:** Mar 16, 2026
+### D4. Development Environment (UPDATED Mar 17)
+- **Windows 4080 (local):** Documentation, code modules (no GPU deps), quick iteration
+- **Linux 5090 (dev machine):** **Primary dev — 3DGS, AnyGrasp, π0.5 inference, OmniGibson eval** (has RT Cores)
+- **GMU Hopper (A100 cluster):** VLA finetuning (LoRA + TFA), gsplat batch rendering at scale
+- **Strategy:** 5090 先跑通最小 E2E pipeline → 迁移 Hopper 做 scale
+- **Hopper storage:** HOME (code, 60GB) / SCRATCH (envs + weights, unlimited, 90d purge) / PROJECTS (results, 1TB)
+- **Date:** Mar 16–17, 2026
 
 ---
 
-### D5. Simulation Environment — BEHAVIOR-1K (OmniGibson)
+### D5. Simulation Environment — BEHAVIOR-1K (OmniGibson) — UPDATED
 - **Choice:** BEHAVIOR-1K / OmniGibson as the simulation environment for benchmark evaluation
-- **Date:** Mar 16, 2026
+- **Critical constraint (Mar 17):** Isaac Sim requires RT Cores → **A100/H100 NOT supported** (confirmed via NVIDIA docs + GitHub #1872)
+- **OmniGibson role clarified:** Evaluation only (Stage D) + initial scene image capture (Stage A). **NOT in data synthesis loop.**
+- **Data synthesis pipeline (Stage B) is entirely 3DGS-based:** AnyGrasp → motion plan → Gaussian edit → gsplat render. Pure CUDA, runs on A100.
+- **Evaluation platform alternatives under consideration:**
+  - OmniGibson on 5090 (rich BEHAVIOR-1K assets, serial evaluation)
+  - ManiSkill 3 on Hopper A100 (Vulkan rendering, GPU-parallel 30K+ FPS, but fewer household assets)
+- **Date:** Mar 16–17, 2026
 
 ### D6. Grasp Model — AnyGrasp
 - **Choice:** AnyGrasp (T-RO 2023)

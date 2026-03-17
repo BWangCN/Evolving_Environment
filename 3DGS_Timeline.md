@@ -43,12 +43,21 @@
 - [x] Comprehensive related works survey (`related_works.md`)
 - [x] BibTeX references generated (`references.bib`)
 
-### 3DGS + VLA Setup (Linux 5090) — parallel
-- [ ] Gaussian Grouping environment setup + first scene reconstruction
-- [ ] π0.5 (openpi) inference verification on LIBERO
-- [ ] BEHAVIOR-1K / OmniGibson installation + first scene loading
+### Infrastructure Analysis (Mar 17) ✅ DONE
+- [x] Hopper storage plan: HOME (code) / SCRATCH (envs, weights) / PROJECTS (results)
+- [x] OmniGibson/Isaac Sim confirmed **incompatible with A100** (no RT Cores) — evaluation only
+- [x] Pipeline bottleneck = gsplat batch rendering (pure CUDA, runs on A100)
+- [x] OmniGibson NOT in data synthesis loop → reduced to evaluation platform
+- [x] ManiSkill 3 identified as GPU-parallel A100-compatible evaluation alternative (pending decision)
+- [x] Development strategy: **5090 first** (debug E2E) → Hopper (scale up)
 
-**✅ Checkpoint: All code modules built + 74 tests passing + 3DGS/VLA setup in progress on Linux**
+### 3DGS + VLA Setup (Linux 5090) — in progress
+- [ ] Gaussian Grouping environment setup + first scene reconstruction
+- [ ] π0.5 (openpi) inference verification
+- [ ] AnyGrasp installation + license
+- [ ] Minimal E2E pipeline: object point cloud → AnyGrasp → motion plan → Gaussian edit → gsplat render → π0.5 input format check
+
+**✅ Checkpoint: All code modules built + 74 tests passing + infrastructure plan locked**
 
 ---
 
@@ -56,8 +65,7 @@
 
 ### AnyGrasp Integration (Linux 5090)
 - [ ] Install AnyGrasp (register license)
-- [ ] Test: OmniGibson scene → depth → point cloud → AnyGrasp → grasp poses
-- [ ] Test: 3DGS scene → extract Gaussian positions → AnyGrasp → grasp poses
+- [ ] Test: 3DGS scene → extract Gaussian positions → point cloud → AnyGrasp → grasp poses
 - [ ] Connect AnyGrasp output to TrajectoryGenerator → verify end-to-end
 - [ ] Replace mock grasp poses with real AnyGrasp output in batch pipeline
 
@@ -67,9 +75,13 @@
 - [ ] Object relocation (move Gaussian group to new pose)
 
 ### First Synthetic Data (Linux 5090)
-- [ ] Render trajectories in 3DGS scene → first (Image, Action, Language) triplets
+- [ ] Render trajectories in 3DGS scene → first (I, a, l) triplets
 - [ ] gsplat batch rendering integration
 - [ ] Visual quality check on rendered images
+
+### Evaluation Platform (parallel investigation)
+- [ ] Decide: OmniGibson on 5090 (serial, rich assets) vs ManiSkill on Hopper (GPU-parallel, A100-compatible)
+- [ ] If ManiSkill: prototype custom EvoHome task definitions with YCB/custom objects
 
 **✅ Checkpoint: Real grasp poses + scene editing + first rendered training images**
 
@@ -82,12 +94,12 @@
 - [ ] Generate full E1 dataset (hundreds of trajectories)
 - [ ] Data augmentation: camera perturbation, object pose randomization, lighting
 
-### VLA Baseline (Hopper A100)
-- [ ] π0.5 zero-shot evaluation on BEHAVIOR-1K tasks → baseline numbers
-- [ ] First LoRA finetune attempt on E1 synthetic data
+### VLA Baseline (5090 → Hopper A100)
+- [ ] π0.5 zero-shot inference sanity check (5090 first, then migrate to Hopper)
+- [ ] First LoRA finetune attempt on E1 synthetic data (Hopper A100)
 - [ ] Sanity check: finetuned model improves over zero-shot on E1?
 
-### EvoHome-Bench Evaluation Pipeline (Linux)
+### EvoHome-Bench Evaluation Pipeline
 - [ ] Automated evaluation script: load model → run episodes → compute metrics
 - [ ] E1 performance baseline established
 
@@ -194,5 +206,6 @@
 | Flow matching decoder doesn't respond to TFA | Week 4 | Fallback: standard LoRA on decoder |
 | Planner trajectories too different from π0.5 pretraining distribution | Week 3 | Expected to be a feature, not bug; ablation in Week 6 |
 | Not enough sequential environments for convincing CL story | Week 5 | Prioritize diverse object types over sheer environment count |
-| OmniGibson setup issues on 5090 | Week 1-2 | Can use Hopper as backup; OmniGibson has Docker images |
+| ~~OmniGibson setup issues on 5090~~ | ~~Week 1-2~~ | **RESOLVED**: OmniGibson only for eval; ManiSkill as A100-compatible alternative |
+| OmniGibson incompatible with A100 (no RT Cores) | Week 2 | Option A: OmniGibson on 5090 (serial eval); Option B: ManiSkill on Hopper (GPU-parallel) |
 | Not enough writing time | Week 10 | Start skeletons Week 7; all figures/tables final by Week 8 |
