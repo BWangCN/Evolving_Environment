@@ -12,75 +12,80 @@
 
 ## Week 1 — Mar 16–22 | Launch + Pipeline Foundation
 
-### Decisions (Windows) ✅
-- [x] Decide VLA backbone → **π0.5** (insulation + single-stage training)
-- [x] Decide 3DGS tool → **Gaussian Grouping + gsplat** (方案 D)
-- [x] Decide simulation env → **BEHAVIOR-1K / OmniGibson**
-- [x] Decide grasp model → **AnyGrasp** + motion planner (eliminates reference trajectory library)
-- [x] Decide robot → **Franka Panda** (parallel-jaw gripper, BEHAVIOR-1K standard)
+### Decisions ✅ DONE
+- [x] VLA backbone → **π0.5** (insulation + single-stage training)
+- [x] 3DGS tool → **Gaussian Grouping + gsplat** (方案 D)
+- [x] Simulation env → **BEHAVIOR-1K / OmniGibson**
+- [x] Grasp model → **AnyGrasp** + motion planner (eliminates reference trajectory library)
+- [x] Robot → **Franka Panda** (parallel-jaw gripper, BEHAVIOR-1K standard)
+- [x] Pipeline gap analysis completed
 - [x] EvoHome-Bench draft: environment sequence, metrics, evaluation protocol
 - [x] Define target objects and 5-environment progression
-- [x] Literature review (35+ papers on 3DGS editing/segmentation/inpainting)
-- [x] Pipeline gap analysis completed
+- [x] 3DGS literature review (35+ papers)
 
-### Trajectory Generation Module (Windows) 🔧
-- [ ] Define Franka Panda specs: workspace limits, gripper max opening (8cm), home pose, EE-to-camera transform
-- [ ] Define action format: π0.5-compatible (Δx,Δy,Δz,Δroll,Δpitch,Δyaw,gripper) + normalization range
-- [ ] Implement `TrajectoryGenerator`: grasp_pose + place_target → waypoint sequence (home → pre-grasp → approach → grasp → lift → transport → pre-place → release)
-- [ ] Implement Cartesian interpolation (linear + slerp for orientation)
-- [ ] Implement `CollisionChecker`: trajectory waypoints × scene point cloud → pass/reject
-- [ ] Implement `ActionFormatter`: EE pose sequence → π0.5 delta actions + gripper state
-- [ ] Implement `CameraPoseComputer`: EE poses → wrist camera poses (for 3DGS rendering)
-- [ ] Unit tests with mock grasp poses + matplotlib 3D visualization
-- [ ] Package as standalone module: `src/trajectory/`
+### Code — Scene + Task + Trajectory ✅ DONE (originally Week 2)
+- [x] `src/scene/`: SceneObject + Registry + AffordanceInference
+- [x] `src/task/`: TaskPlanner + LanguageGenerator (template, LLM extension point)
+- [x] `src/config/franka.py`: Franka specs, action format, collision margins
+- [x] `src/trajectory/`: TrajectoryGenerator, CollisionChecker (inflated volumes), PlaceTargetComputer, ActionFormatter (π0.5 deltas), CameraPoseComputer
+- [x] `src/trajectory/generator.py`: chain() for multi-step sequences
+
+### Code — Evaluation ✅ DONE (originally Week 5)
+- [x] `src/evaluation/metrics.py`: EvoHomeBenchMetrics (FTS, FR, ZIC, CE, EvoHome Score, method comparison)
+- [x] `src/evaluation/cars.py`: CARS scheduler (decoupled VLM/decoder replay)
+
+### Testing ✅ DONE
+- [x] 74 tests passing (scene 15 + task 13 + trajectory 22 + evaluation 20 + batch 4)
+- [x] Batch stress test: 165 trajectories, 90.3% acceptance rate
+- [x] Action distribution validated, camera consistency verified
+
+### Writing — Related Works ✅ DONE
+- [x] Comprehensive related works survey (`related_works.md`)
+- [x] BibTeX references generated (`references.bib`)
 
 ### 3DGS + VLA Setup (Linux 5090) — parallel
 - [ ] Gaussian Grouping environment setup + first scene reconstruction
 - [ ] π0.5 (openpi) inference verification on LIBERO
 - [ ] BEHAVIOR-1K / OmniGibson installation + first scene loading
 
-**✅ Checkpoint: Trajectory module tested with mock data + 3DGS pipeline runs on one scene**
+**✅ Checkpoint: All code modules built + 74 tests passing + 3DGS/VLA setup in progress on Linux**
 
 ---
 
-## Week 2 — Mar 23–29 | Grasp Pipeline + Scene Editing
+## Week 2 — Mar 23–29 | AnyGrasp Integration + Scene Editing + First Data
 
 ### AnyGrasp Integration (Linux 5090)
 - [ ] Install AnyGrasp (register license)
 - [ ] Test: OmniGibson scene → depth → point cloud → AnyGrasp → grasp poses
 - [ ] Test: 3DGS scene → extract Gaussian positions → AnyGrasp → grasp poses
 - [ ] Connect AnyGrasp output to TrajectoryGenerator → verify end-to-end
+- [ ] Replace mock grasp poses with real AnyGrasp output in batch pipeline
 
 ### Scene Editing (Linux 5090)
 - [ ] Gaussian Grouping: object segmentation on tabletop scene
 - [ ] Object removal + inpainting (LaMa) test
 - [ ] Object relocation (move Gaussian group to new pose)
 
-### Task Planning (Windows)
-- [ ] Implement `LanguageGenerator`: object list + task templates → diverse language instructions
-- [ ] Implement `TaskPlanner`: given objects in scene → enumerate valid (task, language) pairs
-- [ ] Define place targets per task type (pick-place, rearrange, stack)
+### First Synthetic Data (Linux 5090)
+- [ ] Render trajectories in 3DGS scene → first (Image, Action, Language) triplets
+- [ ] gsplat batch rendering integration
+- [ ] Visual quality check on rendered images
 
-### Metrics Module (Windows)
-- [ ] Implement `EvoHomeBenchMetrics`: performance matrix → FTS, FR, ZIC, CE, EvoHome Score
-- [ ] Unit tests with synthetic performance matrices
-
-**✅ Checkpoint: Full grasp→trajectory→action chain works + scene editing verified**
+**✅ Checkpoint: Real grasp poses + scene editing + first rendered training images**
 
 ---
 
-## Week 3 — Mar 30–Apr 5 | First Synthetic Data + VLA Baseline
+## Week 3 — Mar 30–Apr 5 | Synthetic Data at Scale + VLA Baseline
 
 ### Synthetic Data Generation (Linux 5090 / A100)
-- [ ] Full pipeline end-to-end: scene → segment → grasp → plan → edit scene → render → (I, a, l)
-- [ ] First batch of synthetic data for E1 (base kitchen, 5 objects)
-- [ ] Data augmentation: camera perturbation, object pose randomization
-- [ ] gsplat batch rendering integration for scale
+- [ ] Full pipeline end-to-end: scene → segment → grasp → plan → edit → render → (I, a, l)
+- [ ] Generate full E1 dataset (hundreds of trajectories)
+- [ ] Data augmentation: camera perturbation, object pose randomization, lighting
 
 ### VLA Baseline (Hopper A100)
 - [ ] π0.5 zero-shot evaluation on BEHAVIOR-1K tasks → baseline numbers
 - [ ] First LoRA finetune attempt on E1 synthetic data
-- [ ] Sanity check: does finetuned model improve over zero-shot on E1?
+- [ ] Sanity check: finetuned model improves over zero-shot on E1?
 
 ### EvoHome-Bench Evaluation Pipeline (Linux)
 - [ ] Automated evaluation script: load model → run episodes → compute metrics
@@ -118,7 +123,7 @@
 
 ### Anti-Forgetting (Hopper A100)
 - [ ] 3DGS Environment Bank implementation
-- [ ] CARS (Competence-Aware Adaptive Replay Scheduling)
+- [ ] CARS integration with real competence scores
 - [ ] Compare: no replay vs uniform replay vs CARS
 
 **✅ Checkpoint: Full 5-env results + replay strategy comparison**
@@ -169,7 +174,7 @@
 
 ---
 
-## Week 10 — May 18–25 | 🚨 Full-Time Writing + Submission
+## Week 10 — May 18–25 | Full-Time Writing + Submission
 
 - [ ] May 18–20: Major revisions based on Professor feedback
 - [ ] May 21–23: Polish writing, figures, verify number consistency across all tables
@@ -187,7 +192,7 @@
 | 3DGS synthetic data quality too low → VLA degrades | Week 3 | Sanity check: finetune small batch, check trend |
 | AnyGrasp license or compatibility issues | Week 2 | Fallback: Contact-GraspNet (fully open source) |
 | Flow matching decoder doesn't respond to TFA | Week 4 | Fallback: standard LoRA on decoder |
-| Planner trajectories too different from π0.5 pretraining distribution | Week 3 | This is expected to be a feature, not bug; ablation in Week 6 |
+| Planner trajectories too different from π0.5 pretraining distribution | Week 3 | Expected to be a feature, not bug; ablation in Week 6 |
 | Not enough sequential environments for convincing CL story | Week 5 | Prioritize diverse object types over sheer environment count |
 | OmniGibson setup issues on 5090 | Week 1-2 | Can use Hopper as backup; OmniGibson has Docker images |
 | Not enough writing time | Week 10 | Start skeletons Week 7; all figures/tables final by Week 8 |
