@@ -113,6 +113,16 @@ cam_poses = compute_camera_poses(traj)       # for 3DGS rendering
 # → Render images at each cam_pose → pair with actions + lang → (I, a, l) training data
 ```
 
+### Mar 16 (Sun) — continued, late night
+- **Evaluation module implemented** (`src/evaluation/`):
+  - `EvoHomeBenchMetrics`: input performance matrix → FTS, FR, ZIC, CE, EvoHome Score, method comparison table
+  - `CARSScheduler`: competence-aware adaptive replay scheduling with decoupled VLM/decoder support
+- **Batch stress test** (`tests/test_batch_generation.py`):
+  - 165 pick-place trajectories across all task types, 90.3% acceptance rate
+  - Action statistics: position deltas within [-3.4, 3.2] normalized, orientation deltas within [-3.1, 3.2]
+  - Camera-EE distance perfectly consistent (std=0.000000m)
+- **Total: 74 tests passing** (15 scene + 13 task + 22 trajectory + 4 batch + 20 evaluation)
+
 ### Mar 17 (Mon)
 - *(pending)*
 
