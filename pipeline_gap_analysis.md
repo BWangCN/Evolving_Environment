@@ -2,7 +2,10 @@
 
 > **Tool Decision:** Gaussian Grouping (core pipeline) + gsplat (batch rendering) — **方案 D**
 > **Synced with:** [3DGS_Timeline.md](3DGS_Timeline.md) | [progress.md](progress.md)
-> **Status Legend:** ✅ 工具覆盖 | ❌ 需自建 | 🔧 进行中 | ✔️ 已完成
+> **Status Legend:** ✅ 工具覆盖 | ❌ 需自建 | 🔧 进行中 | ✔️ 已完成 | ~~删除~~ 不再需要
+>
+> **MAJOR UPDATE (Mar 16):** Replaced reference trajectory library + retargeting with
+> AnyGrasp + motion planner pipeline. B5/B6 eliminated. True zero-demonstration.
 
 ---
 
@@ -19,24 +22,42 @@
 
 ---
 
+## Stage A+: Scene Object Registry (NEW)
+
+> **Bridges A3→B1:** Unified data structure combining geometry (from 3DGS) + semantics + affordances.
+> Drives task planning, language generation, place target computation, and collision checking.
+
+| ID | 模块 | 状态 | 工具/方案 |
+|----|------|------|-----------|
+| A+ | SceneObject dataclass | 🔧 Windows 开发中 | geometry + category + description + affordances |
+| A+ | SceneObjectRegistry | 🔧 Windows 开发中 | 管理场景中所有物体的注册表 |
+| A+ | AffordanceInference | 🔧 Windows 开发中 | category → valid tasks, is_container, is_surface, graspable |
+
+---
+
 ## Stage B-1: 任务规划（做什么）
 
 | ID | 模块 | 状态 | 工具/方案 |
 |----|------|------|-----------|
-| B1 | 物体-任务匹配 | ❌ 缺失 | LLM：物体列表 + 任务模板 → 可行组合 |
-| B2 | Language instruction 生成 | ❌ 缺失 | LLM 模板扩展，多样化表述 |
+| B1 | 物体-任务匹配 | ❌ 缺失 | TaskPlanner: registry → enumerate valid (task, object_pair) |
+| B2 | Language instruction 生成 | ❌ 缺失 | LanguageGenerator: task + objects → diverse instructions |
 | B3 | 任务组合编排 | ❌ 缺失 | 规则 + LLM；先单步，多步作为 extension |
 
 ---
 
 ## Stage B-2: 轨迹生成（怎么做）
 
+> **Pipeline change:** 不再使用参考轨迹库 + 轨迹重定向。
+> 改为：AnyGrasp 生成 grasp poses → Motion planner 生成轨迹。
+> 这实现了真正的 zero-demonstration（不需要任何人工演示）。
+
 | ID | 模块 | 状态 | 工具/方案 |
 |----|------|------|-----------|
-| B4 | Grasp pose proposal | ❌ 缺失 | GraspSplats / AnyGrasp / Contact-GraspNet |
-| B5 | 参考轨迹匹配 | ❌ 缺失 | Grasp type + task type 相似度匹配 |
-| B6 | 轨迹重定向 (retargeting) | ❌ 缺失 | 两个 grasp pose 间 SE(3) 相对变换 |
-| B7 | 碰撞检测 | ❌ 缺失 | Gaussian 点云近似碰撞检查 或 trimesh |
+| B4 | Grasp pose generation | ❌ 需自建 | **AnyGrasp** on object point cloud extracted from 3DGS |
+| ~~B5~~ | ~~参考轨迹匹配~~ | ~~删除~~ | ~~被 AnyGrasp + motion planner 取代~~ |
+| ~~B6~~ | ~~轨迹重定向~~ | ~~删除~~ | ~~被 AnyGrasp + motion planner 取代~~ |
+| B6* | Motion planning | ❌ 需自建 | Home pose → pre-grasp → approach → grasp → lift → (place) |
+| B7 | 碰撞检测 | ❌ 需自建 | Scene-level Gaussian 点云做障碍物检测，过滤 invalid grasps |
 
 ---
 
@@ -74,9 +95,9 @@
 ## 开发优先级
 
 ```
-Week 1: 锁定决策 + A1/A2/A3 跑通（Gaussian Grouping 验证）
-Week 2: A4→B1→B2 (LLM驱动) + B4 (grasp pose)
-Week 3: B5→B6→B10→B13 (轨迹+渲染) + B12 (增强)
+Week 1: 锁定决策 + A1/A2/A3 跑通（Gaussian Grouping 验证）  ← DONE (decisions)
+Week 2: B4 (AnyGrasp) + B6* (motion planner) + B7 (collision) + B2 (language gen)
+Week 3: B10 (EE attach) + B12 (augmentation) + B13 (batch render) → first synthetic data
 Week 4: C1 (LoRA+TFA on π0.5)
 Week 5+: C2, C3, D1
 ```

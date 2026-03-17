@@ -43,11 +43,39 @@
 
 ---
 
-## Pending Decisions
+### D5. Simulation Environment — BEHAVIOR-1K (OmniGibson)
+- **Choice:** BEHAVIOR-1K / OmniGibson as the simulation environment for benchmark evaluation
+- **Date:** Mar 16, 2026
 
-### P1. Grasp Pose Proposal Method
-- **Candidates:** GraspSplats (CoRL 2024), AnyGrasp, Contact-GraspNet
-- **Target:** Week 2
+### D6. Grasp Model — AnyGrasp
+- **Choice:** AnyGrasp (T-RO 2023)
+- **Why not GraspGen:** Too new (2025), less community adoption, harder to justify to reviewers
+- **Why not GaussianGrasper:** Its language grounding is redundant (we already have object segmentation); grasp quality itself isn't better than AnyGrasp
+- **Pipeline:** 3DGS → segment object → extract point cloud from Gaussians → AnyGrasp → all valid grasp poses used as diverse training data (no selection heuristic)
+- **Date:** Mar 16, 2026
+
+### D7. Trajectory Generation — Motion Planner (NOT Reference Trajectory Library)
+- **Choice:** Use classical motion planner to generate trajectories from grasp poses. **Eliminates** the reference trajectory library entirely.
+- **Pipeline:** AnyGrasp generates N candidates → collision check filters to M valid → motion planner generates trajectory per grasp (home → pre-grasp → approach → grasp → lift) → render in 3DGS
+- **Why this is better:** True zero-demonstration (not "amortized demonstration"); no dependency on human demos; diverse grasp poses = diverse training data; motion planning is classical and reliable
+- **Impact:** B5 (trajectory matching) and B6 (trajectory retargeting) from original pipeline are eliminated
+- **Date:** Mar 16, 2026
+
+### D8. Robot Initial Position — Fixed Home Pose + Minor Randomization
+- **Choice:** Fixed home pose (arm above workspace ~40cm) with small perturbations (±2-3cm position, ±5° orientation)
+- **No large randomization:** VLA learns visuo-motor policy; large initial position changes make same-object observations too different
+- **Diversity comes from:** Environment composition changes (evolving objects/layouts), NOT robot starting position
+- **Date:** Mar 16, 2026
+
+### D9. Robot Platform — Franka Panda
+- **Choice:** Franka Panda (7-DOF, parallel-jaw gripper, max opening 8cm)
+- **Why:** BEHAVIOR-1K official standard, π0/π0.5 evaluation standard, parallel-jaw compatible with AnyGrasp
+- **Home pose:** Joint angles [0, -π/4, 0, -3π/4, 0, π/2, π/4], EE ~40cm above workspace
+- **Date:** Mar 16, 2026
+
+---
+
+## Pending Decisions
 
 ### P2. Inpainting Strategy Details
 - **Baseline:** Gaussian Grouping's LaMa approach
@@ -56,10 +84,6 @@
 
 ### P3. Language Instruction Generation
 - **Candidates:** LLM template expansion, manual template library
-- **Target:** Week 2
-
-### P4. Reference Trajectory Library Design
-- **Open questions:** How many tasks × how many demos? What grasp types to cover?
 - **Target:** Week 2
 
 ### P5. LoRA Rank

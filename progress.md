@@ -29,7 +29,15 @@
 - **Development environment decision:** 本地 4080 用 WSL2, 5090 做大规模重建, Hopper 做 VLA 训练
 - **All decisions documented:** `decisions.md` (4 locked + 8 pending)
 - **Pipeline gap analysis saved:** `pipeline_gap_analysis.md`
-- **Next steps:** WSL2 环境搭建 → Gaussian Grouping 安装 → 跑通 A1/A2/A3
+- **Simulation environment decision:** BEHAVIOR-1K / OmniGibson
+- **EvoHome-Bench draft designed:** `EvoHome_Bench_Design.md`
+  - 5 environments (Base → Add → Replace → Layout → Full Change)
+  - 15 tasks per env (10 specific + 5 shared for forgetting measurement)
+  - 3 language variants per task → 45 evaluations per env
+  - Performance matrix protocol, FTS/FR/ZIC/CE metrics
+  - Multi-view capture protocol for 3DGS (~90 images per env)
+- **Git repo initialized:** github.com/BWangCN/Evolving_Environment (private)
+- **Next steps (5090 Linux):** Gaussian Grouping setup + π0.5 inference verification
 
 ### Mar 17 (Mon)
 - *(pending)*
@@ -49,13 +57,46 @@
 ### Mar 22 (Sat)
 - *(pending)*
 
-**Week 1 Tasks (from Timeline):**
-- [ ] Decide VLA backbone (π0 / OpenVLA / other) and 3DGS reconstruction tool
-- [ ] Run through first scene reconstruction end-to-end
-- [ ] EvoHome-Bench draft: sequential environment protocol, initial metrics list
-- [ ] Define first batch of target objects and environment sequence
+**Week 1 Tasks — Decisions (Windows):**
+- [x] VLA backbone → π0.5
+- [x] 3DGS tool → Gaussian Grouping + gsplat
+- [x] Simulation env → BEHAVIOR-1K / OmniGibson
+- [x] Grasp model → AnyGrasp + motion planner
+- [x] Robot → Franka Panda
+- [x] EvoHome-Bench draft
+- [x] Target objects + environment sequence
+- [x] Literature review (35+ papers)
+- [x] Pipeline gap analysis
 
-**Week 1 Checkpoint:** 3DGS pipeline runs on one scene + EvoHome-Bench dimension draft
+**Week 1 Tasks — Code Modules (Windows):**
+
+*Phase 1: Scene Object System (`src/scene/`)*
+- [ ] `SceneObject` dataclass (geometry + semantics + affordances)
+- [ ] `SceneObjectRegistry` (管理场景中所有物体)
+- [ ] `AffordanceInference` (category → affordances/valid_tasks)
+- [ ] Unit tests with mock objects
+
+*Phase 2: Task Planning (`src/task/`)*
+- [ ] `TaskPlanner` (registry → 枚举合法 task-object pairs)
+- [ ] `LanguageGenerator` (task + objects → 多样化 language instructions)
+- [ ] Unit tests
+
+*Phase 3: Trajectory Generation (`src/trajectory/`)*
+- [ ] Franka specs + π0.5 action format definition
+- [ ] `PlaceTargetComputer` (place_on/in/next_to/stack from object geometry)
+- [ ] `TrajectoryGenerator` (grasp + place_target → phased waypoints)
+- [ ] Cartesian interpolation + slerp orientation
+- [ ] `CollisionChecker` (inflated volumes, phase-aware margin)
+- [ ] `ActionFormatter` (EE poses → π0.5 delta actions + normalization)
+- [ ] `CameraPoseComputer` (EE pose → wrist camera pose)
+- [ ] Unit tests + matplotlib 3D visualization
+
+**Week 1 Tasks — Setup (Linux 5090):**
+- [ ] Gaussian Grouping + first scene reconstruction
+- [ ] π0.5 inference on LIBERO
+- [ ] BEHAVIOR-1K / OmniGibson installation
+
+**Week 1 Checkpoint:** Trajectory module tested with mock data + 3DGS pipeline runs on one scene
 
 ---
 
