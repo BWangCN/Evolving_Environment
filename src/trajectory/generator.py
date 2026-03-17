@@ -230,6 +230,37 @@ class TrajectoryGenerator:
             traj.is_valid = is_valid
             return is_valid
 
+    def chain(self, trajectories: list[Trajectory]) -> Trajectory:
+        """Chain multiple trajectories into one long-horizon sequence.
+
+        Between each trajectory, inserts a return-to-home segment.
+        The chained trajectory starts at home and ends at the retreat of the last task.
+        """
+        if not trajectories:
+            return Trajectory(task_type="empty")
+
+        chained = Trajectory(task_type="chained")
+
+        for i, traj in enumerate(trajectories):
+            if i == 0:
+                # First trajectory: include all waypoints as-is (starts from home)
+                chained.waypoints.extend(traj.waypoints)
+            else:
+                # Return to home from previous trajectory's end
+                prev_end = chained.waypoints[-1]
+                self._add_segment(
+                    chained,
+                    prev_end.position, prev_end.orientation,
+                    self.home_pos, self.home_ori,
+                    franka.GRIPPER_OPEN, "return_home",
+                    include_start=False,
+                )
+                # Then append next trajectory, skipping its first waypoint
+                # (which is home — would duplicate)
+                chained.waypoints.extend(traj.waypoints[1:])
+
+        return chained
+
     def _add_segment(
         self,
         traj: Trajectory,
