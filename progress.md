@@ -37,7 +37,81 @@
   - Performance matrix protocol, FTS/FR/ZIC/CE metrics
   - Multi-view capture protocol for 3DGS (~90 images per env)
 - **Git repo initialized:** github.com/BWangCN/Evolving_Environment (private)
+- **Core pipeline code implemented (50 tests passing):** see Code Reference below
 - **Next steps (5090 Linux):** Gaussian Grouping setup + π0.5 inference verification
+
+---
+
+### Code Reference (src/)
+
+#### `src/scene/` — Scene Object System
+
+| File | What it does | Key usage |
+|------|-------------|-----------|
+| `object.py` | `SceneObject` dataclass — holds geometry (point cloud, bbox, centroid) + semantics (category, description) + affordances (graspable, is_container, is_surface) for one object | `obj = SceneObject("bowl_01", "bowl", "white bowl", point_cloud=pts)` |
+| `affordance.py` | `infer_affordances(obj)` — given category name, auto-fills graspable/container/surface flags and valid task types. Extend `AFFORDANCE_DB` dict for new categories | `infer_affordances(obj)  # modifies obj in-place` |
+| `registry.py` | `SceneObjectRegistry` — per-environment container for all objects. Query by category, affordance, task type. Get combined point cloud with exclusions (for collision checking) | `reg.add_object("mug_01", "mug", "red mug", point_cloud=pts)` / `reg.get_containers()` / `reg.get_scene_point_cloud(exclude=["bowl_01"])` |
+
+#### `src/task/` — Task Planning & Language
+
+| File | What it does | Key usage |
+|------|-------------|-----------|
+| `planner.py` | `TaskPlanner` — takes a registry, enumerates all valid `ManipulationTask(task_type, obj, target)` triples. Handles size filtering (e.g., object must fit in container opening) | `planner = TaskPlanner(registry)` / `tasks = planner.enumerate_tasks()` / `tasks = planner.enumerate_tasks([TaskType.PLACE_IN])` |
+| `language.py` | `LanguageGenerator` — generates diverse natural language instructions per task. Currently rule-based templates; `backend="llm"` reserved for future LLM integration | `gen = LanguageGenerator()` / `gen.generate(task, n_variants=3)` → `["place the spoon in the bowl", ...]` |
+
+#### `src/trajectory/` — Trajectory Generation Pipeline
+
+| File | What it does | Key usage |
+|------|-------------|-----------|
+| `generator.py` | `TrajectoryGenerator` — given a `GraspPose` (mock or from AnyGrasp) + place target, generates phased waypoint trajectory: home→transit→pre_grasp→approach→grasp→lift→transit_place→pre_place→place→release→retreat. Also validates against `CollisionChecker` | `gen = TrajectoryGenerator()` / `traj = gen.generate_pick_place(grasp, place_target)` / `gen.validate_trajectory(traj, checker)` |
+| `collision.py` | `CollisionChecker` — inflated safety volume collision detection using KDTree. Phase-aware margins: larger during transport, smaller during placement. Supports grasped-object-in-hand collision checking | `checker = CollisionChecker(scene_cloud, gripper_margin=0.03)` / `checker.check_trajectory(waypoints)` |
+| `place_target.py` | `compute_place_target()` — computes 3D place position from target object's geometry + task type (place_on → top surface, place_in → inside container, place_next_to → offset, stack_on → directly above) | `target_pos = compute_place_target(TaskType.PLACE_IN, bowl_obj)` |
+| `action_format.py` | `trajectory_to_actions()` — converts waypoint sequence to π0.5 delta actions `[Δx,Δy,Δz,Δroll,Δpitch,Δyaw,gripper]`, normalized by `ACTION_POS_SCALE` and `ACTION_ROT_SCALE` | `actions = trajectory_to_actions(traj)  # shape (T-1, 7)` |
+| `camera.py` | `compute_camera_poses()` — transforms EE poses to wrist camera poses via fixed EE-to-camera offset. Output used for 3DGS/gsplat rendering | `cam_poses = compute_camera_poses(traj)  # list of (pos, quat)` |
+| `interpolation.py` | Low-level math: linear position interpolation (`lerp`), spherical orientation interpolation (`slerp`), quaternion↔euler conversions. All quaternions use wxyz convention | `slerp(q1, q2, t)` / `quat_to_euler(q)` / `euler_to_quat(rpy)` |
+
+#### `src/config/franka.py` — Robot & Action Constants
+
+Franka Panda specs (home pose, gripper limits, workspace bounds), wrist camera intrinsics, trajectory phase heights, collision margins, π0.5 action normalization scales. **Edit this file to tune parameters.**
+
+#### End-to-end usage example
+
+```python
+from src.scene import SceneObjectRegistry
+from src.scene.object import TaskType
+from src.task import TaskPlanner, LanguageGenerator
+from src.trajectory import (
+    TrajectoryGenerator, GraspPose, CollisionChecker,
+    compute_place_target, trajectory_to_actions, compute_camera_poses,
+)
+
+# 1. Build scene
+reg = SceneObjectRegistry("E1")
+reg.add_object("bowl_01", "bowl", "white bowl", point_cloud=bowl_pts)
+reg.add_object("spoon_01", "spoon", "metal spoon", point_cloud=spoon_pts)
+
+# 2. Plan tasks
+tasks = TaskPlanner(reg).enumerate_tasks([TaskType.PLACE_IN])
+lang = LanguageGenerator().generate(tasks[0], n_variants=3)
+
+# 3. Mock grasp (replace with AnyGrasp on Linux)
+grasp = GraspPose(position=spoon_pos, orientation=down_quat)
+
+# 4. Compute place target from bowl geometry
+place = compute_place_target(TaskType.PLACE_IN, reg.get("bowl_01"))
+
+# 5. Generate trajectory
+traj = TrajectoryGenerator().generate_pick_place(grasp, place)
+
+# 6. Collision check (exclude bowl = place target)
+checker = CollisionChecker(reg.get_scene_point_cloud(exclude=["bowl_01"]))
+assert TrajectoryGenerator().validate_trajectory(traj, checker)
+
+# 7. Convert to training data format
+actions = trajectory_to_actions(traj)        # (T-1, 7) π0.5 actions
+cam_poses = compute_camera_poses(traj)       # for 3DGS rendering
+# → Render images at each cam_pose → pair with actions + lang → (I, a, l) training data
+```
 
 ### Mar 17 (Mon)
 - *(pending)*
