@@ -7,7 +7,10 @@
 
 ## Week 1 — Mar 16–22 | Launch + Benchmark Framing
 
-### Mar 16 (Sun)
+### Mar 16 (Sun) — Decision Day + A1/A2/A3 Verified
+
+#### Part 1: Research & Decisions (done on Windows 4080 machine)
+
 - Read through full technical pipeline document (`3DGS_EvoHome_Technical_Pipeline.md`)
 - Created project progress tracking (`progress.md`)
 - **VLA backbone decision: π0.5** (non-RLFT SOTA)
@@ -39,6 +42,67 @@
 - **Git repo initialized:** github.com/BWangCN/Evolving_Environment (private)
 - **Core pipeline code implemented (50 tests passing):** see Code Reference below
 - **Next steps (5090 Linux):** Gaussian Grouping setup + π0.5 inference verification
+
+#### Part 2: Linux 5090 Environment Setup + A1/A2/A3 End-to-End Verification
+
+- **Cloned Gaussian Grouping** to `/home/bwang25/Desktop/Manipulation/gaussian-grouping/`
+- **Created conda environment `gaussian_grouping`:**
+  - Python 3.10, PyTorch 2.10.0+cu128, CUDA toolkit 12.8 (via conda)
+  - RTX 5090 is Blackwell architecture (SM 120, compute capability 12.0)
+  - **cu126 PyTorch does NOT work** — shows "sm_120 is not compatible" warnings. **Must use cu128+**
+  - System CUDA is 13.1 (driver 590.48.01) — forward compatible with CUDA 12.8 runtime
+
+- **Compiled CUDA extensions for Blackwell (SM 120):**
+  - `diff-gaussian-rasterization` — compiled cleanly with `TORCH_CUDA_ARCH_LIST="12.0"`
+  - `simple-knn` — **required a source fix:** added `#include <cfloat>` for `FLT_MAX` undefined error on newer CUDA
+  - Build recipe: `PYTHONNOUSERSITE=1 CUDA_HOME=$CONDA_PREFIX TORCH_CUDA_ARCH_LIST="12.0" pip install --no-build-isolation <package>`
+  - Both extensions import and work correctly
+
+- **Installed COLMAP 3.13.0** via conda-forge (CUDA-enabled)
+
+- **Installed DEVA + SAM for mask preparation:**
+  - DEVA package installed (`pip install -e .`)
+  - Downloaded all pretrained models to `Tracking-Anything-with-DEVA/saves/`:
+    - `sam_vit_h_4b8939.pth` (2.4 GB) — SAM ViT-H
+    - `DEVA-propagation.pth` (277 MB)
+    - `groundingdino_swint_ogc.pth` (694 MB)
+    - `mobile_sam.pt` (41 MB)
+    - `GroundingDINO_SwinT_OGC.py` (config)
+  - `segment_anything` installed
+  - **Known issue:** GroundingDINO CUDA extension compilation fails due to conda GCC 14.3 header conflicts (`_Float32` undefined errors in nvcc). **Not blocking** — only needed for custom dataset mask preparation; pre-converted datasets work fine. Fix: force system GCC (`CC=/usr/bin/gcc CXX=/usr/bin/g++`) or remove conda compiler packages.
+
+- **A1/A2/A3 End-to-End Test — PASSED:**
+  - **Dataset:** bear scene from HuggingFace (`mqye/Gaussian-Grouping`), 96 images
+  - **A1 (COLMAP):** Pre-converted sparse reconstruction loaded successfully (96 cameras, 63,659 initial points)
+  - **A2 (3DGS Training):**
+    - 30,000 iterations completed in ~17 minutes
+    - Training speed: ~30 it/s on RTX 5090 (30 GB VRAM used)
+    - Loss: 1.257 (iter 0) → ~0.15 (iter 30,000)
+    - Checkpoints saved at iterations 1,000 / 7,000 / 30,000
+    - Final model: `output/bear/point_cloud/iteration_30000/point_cloud.ply` (935 MB) + `classifier.pth` (19 KB)
+  - **A3 (SAM Segmentation Rendering):**
+    - Rendered all 96 views (~1 min, 1.6 it/s)
+    - Output types generated:
+      - `renders/` — 96 photorealistic RGB novel-view images
+      - `objects_pred/` — 96 predicted segmentation masks (per-object color coding)
+      - `gt/` — 96 ground truth RGB images
+      - `gt_objects_color/` — 96 ground truth segmentation masks
+      - `objects_feature16/` — 96 identity encoding feature visualizations (16-dim)
+      - `concat/` — 96 side-by-side comparison images (GT | Render | GT Seg | Pred Seg | Features)
+  - **Segmentation quality:** Excellent
+    - Bear statue (body + base) segmented as one coherent object (brown) across all viewpoints
+    - Stone pedestal segmented separately (green)
+    - Individual tree trunks segmented (purple, orange, light blue)
+    - Foliage, ground, and background all separated
+    - Segmentation is **3D consistent** — same object retains same color/ID across different viewpoints
+  - **Conclusion:** Gaussian Grouping works end-to-end on RTX 5090 for our pipeline. Reconstruction is photorealistic, segmentation is clean and 3D-consistent. Ready to proceed to custom datasets and Stage B.
+
+- **Output location:** `gaussian-grouping/output/bear/train/ours_30000/`
+  - Visual results can be found at:
+    - Rendered RGB: `renders/00000.png` through `renders/00095.png`
+    - Segmentation: `objects_pred/00000.png` through `objects_pred/00095.png`
+    - Comparisons: `concat/00000.png` through `concat/00095.png`
+    - Feature maps: `objects_feature16/00000.png` through `objects_feature16/00095.png`
 
 ---
 
@@ -163,21 +227,144 @@ cam_poses = compute_camera_poses(traj)       # for 3DGS rendering
 - [x] `src/evaluation/`: EvoHomeBenchMetrics + CARSScheduler + tests
 - [x] 74 tests passing, batch stress test 165 trajectories @ 90.3% acceptance
 
-**Week 1 Tasks — Setup (Linux 5090):** DEFERRED (machine down Mar 16, back online Mar 17)
-- [ ] Gaussian Grouping + first scene reconstruction
-- [ ] π0.5 inference on LIBERO
-- [ ] OmniGibson installation (evaluation only, not needed for data synthesis)
+**Week 1 Tasks — Setup (Linux 5090):** ✅ ALL DONE (Mar 17)
+- [x] Gaussian Grouping environment setup + A1/A2/A3 end-to-end verified (bear scene)
+- [x] Gaussian Grouping scene editing: object removal + inpainting verified
+- [x] gsplat 1.5.3 installed + PLY bridge verified (renders from arbitrary camera pose)
+- [x] AnyGrasp SDK installed (MinkowskiEngine + pointnet2 compiled for Blackwell)
+- [x] π0.5 (openpi) inference verified: (15, 8) action output from 224x224 RGB + prompt
+- [ ] OmniGibson installation (evaluation only, deferred — not needed for data synthesis)
+
+---
+
+### Mar 17 (Mon) — continued, afternoon — Minimal E2E Pipeline Setup
+
+#### Gaussian Grouping Scene Editing (Stage B8/B9 Verified)
+
+- **Object Removal — PASSED:**
+  - Removed bear statue (object ID 34, threshold 0.3) from trained 3DGS scene
+  - Removal PLY saved: `output/bear/point_cloud_object_removal/iteration_30000/point_cloud.ply` (764 MB, down from 892 MB)
+  - All 96 training views rendered to `output/bear/train/ours_object_removal/iteration_30000/`
+  - Bear cleanly removed, leaving ghostly artifact hole on stone pedestal (expected — needs inpainting)
+  - **Bug fixed:** `edit_object_removal.py` line 128 — empty test camera set caused `UnboundLocalError`. Added early return guard.
+
+- **3D Inpainting — PASSED:**
+  - Used pre-computed LaMa 2D pseudo labels from HuggingFace (`data/bear/images_inpaint_unseen/`)
+  - Fine-tuned 10,000 iterations with L1 + LPIPS loss (λ_dlpips=0.5)
+  - Training speed: ~8 it/s on RTX 5090 (27 GB VRAM)
+  - First attempt OOM at iter 4800 during densification → retried with `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True` → completed successfully
+  - Inpaint PLY saved: `output/bear/point_cloud_object_inpaint/iteration_9999/point_cloud.ply` (2.8 GB — larger due to densified Gaussians filling the hole)
+  - **Result quality: Excellent** — stone pedestal surface cleanly filled, no visible artifacts from any viewpoint
+  - **Bug fixed:** `edit_object_inpaint.py` same empty test set bug as removal script.
+
+- **Object Relocation — NOT IN OFFICIAL CODE:**
+  - Gaussian Grouping has no built-in relocation (SE(3) transform on Gaussian groups)
+  - Would require custom code to manipulate `_xyz` (positions) and `_rotation` (quaternions) of selected Gaussians
+  - **Deferred to custom implementation** when working with tabletop scenes
+
+#### gsplat Batch Rendering (Stage B13 Verified)
+
+- **gsplat 1.5.3** installed into `gaussian_grouping` conda env via `pip install gsplat`
+- **PLY bridge verified:** Loaded inpainted scene PLY (9,561,153 Gaussians) → rendered 640x480 RGB from arbitrary camera pose
+- Render output: `(1, 480, 640, 3)` float tensor, range [0.007, 0.974]
+- **CUDA JIT compilation note:** Must set `CUDA_HOME=/usr/local/cuda` (system CUDA 13.1 supports SM 120). Conda CUDA toolkit is only 12.4 and does NOT support `compute_120`.
+- First JIT compile takes ~38 seconds; subsequent runs use cached kernels
+- Test render saved: `Evolving_Environment/gsplat_test_render.png`
+
+#### AnyGrasp Grasp Estimation (Environment Ready, License Pending)
+
+- **Cloned** `anygrasp_sdk` to `/home/bwang25/Desktop/Manipulation/anygrasp_sdk/`
+- **MinkowskiEngine v0.5.4** compiled successfully after two fixes:
+  1. **NVTX headers:** Added CPATH to nvidia nvtx include dir
+  2. **CUDA 12.8 `__to_address` fix:** Created local copy of `/usr/include/c++/11/bits/shared_ptr_base.h` with `std::__to_address` qualification (no sudo needed — used CPATH override)
+  - Build recipe:
+    ```
+    CPATH="$FIX_INCLUDE:$NVTX_INCLUDE:/usr/include/x86_64-linux-gnu:$CPATH"
+    CC=/usr/bin/gcc CXX=/usr/bin/g++ CUDA_HOME=$CONDA_PREFIX TORCH_CUDA_ARCH_LIST="12.0"
+    python setup.py install --blas_include_dirs=${CONDA_PREFIX}/include --blas_library_dirs=${CONDA_PREFIX}/lib --blas=openblas
+    ```
+- **pointnet2** compiled and installed (SM 120)
+- **Core dependencies** installed: numpy, Pillow, scipy, tqdm, open3d
+  - `graspnetAPI` failed to install (distutils.msvccompiler removed in modern setuptools) — not needed for grasp detection, only for GraspNet-1Billion evaluation
+- **OpenSSL 1.1** installed via conda for license_checker binary
+- **Feature ID obtained:** `8535717028844380837`
+- **⚠️ BLOCKING:** License registration required at https://forms.gle/XVV3Eip8njTYJEBo6 (~2 business days)
+
+#### π0.5 (openpi) VLA Inference (Verified)
+
+- **Cloned** `openpi` to `/home/bwang25/Desktop/Manipulation/openpi/` (with submodules: aloha, LIBERO)
+- **Environment:** uv-managed `.venv` (Python 3.11.13, JAX 0.5.3 + CUDA 12, PyTorch 2.7.1)
+  - Separate from `gaussian_grouping` env (different Python version + JAX)
+  - Created via `GIT_LFS_SKIP_SMUDGE=1 uv sync`
+- **Checkpoint downloaded:** `gs://openpi-assets/checkpoints/pi05_droid` → cached at `~/.cache/openpi/`
+- **Inference test — PASSED:**
+  - Config: `pi05_droid` (action_dim=32, action_horizon=15)
+  - Input: 224x224 uint8 RGB images + text prompt + joint state
+  - Output: `actions.shape = (15, 8)` — 15-step horizon, 8-dim (7 joint deltas + gripper)
+  - Actions range: [-0.58, 0.97] (reasonable normalized range)
+  - First inference: ~26s (includes JAX JIT compilation); subsequent calls much faster
+  - **GPU memory:** ~12 GB for inference (cannot run simultaneously with GG inpainting)
+
+#### CUDA Extension Rebuild Notes
+
+- PyTorch is installed in **user-site** (`~/.local/lib/python3.10/site-packages/`), NOT in the conda env
+- Current version: PyTorch 2.9.1+cu128 (was 2.10.0 before gsplat install)
+- `simple-knn` and `diff-gaussian-rasterization` had to be recompiled after PyTorch version change
+- Build recipe for all CUDA extensions on Blackwell:
+  ```bash
+  CC=/usr/bin/gcc CXX=/usr/bin/g++ CUDA_HOME=$CONDA_PREFIX TORCH_CUDA_ARCH_LIST="12.0" \
+  CFLAGS="-I/usr/include -I/usr/include/x86_64-linux-gnu" \
+  pip install --no-build-isolation --force-reinstall .
+  ```
 
 ---
 
 ## Week 2 — Mar 23–29 | AnyGrasp + Scene Editing + First Data
 
 **Week 2 Tasks:**
-- [ ] AnyGrasp: install + license + test on 3DGS point clouds (5090)
-- [ ] Gaussian Grouping: object segmentation + removal + relocation (5090)
-- [ ] gsplat: first rendered (I, a, l) triplets (5090)
-- [ ] π0.5: inference verification (5090)
+- [ ] AnyGrasp: receive license → test on 3DGS point clouds (5090)
+- [x] ~~Gaussian Grouping: object segmentation + removal (5090)~~ — done Mar 17
+- [x] ~~gsplat: PLY bridge + rendering from arbitrary camera pose (5090)~~ — done Mar 17
+- [x] ~~π0.5: inference verification (5090)~~ — done Mar 17
+- [ ] Gaussian Grouping: object relocation via SE(3) transform (custom code needed)
+- [ ] Connect AnyGrasp → TrajectoryGenerator → gsplat end-to-end
+- [ ] First rendered (I, a, l) triplets
 - [ ] Evaluation platform decision: OmniGibson (5090) vs ManiSkill (Hopper)
+
+### Mar 17 (Mon) — evening — ManiSkill 3 + π0.5 Integration
+
+#### Simulation Platform Decision: ManiSkill 3
+
+- **OmniGibson blocked:** Isaac Sim 4.5 crashes on RTX 5090 (Blackwell). Isaac Sim 5.0 migration has no ETA.
+- **ManiSkill 3** selected: Vulkan rasterization + RT rendering mode, Franka Panda default, works on 5090 now
+- **ManiSkill 3.0.0b22** installed into `gaussian_grouping` conda env
+- **PickCube-v1** verified with `rt-fast` shader — Franka + red cube + green goal rendered at 512x512
+- Missing deps fixed during install: `lxml`, `decorator` (user-site packaging issues)
+- Build fix: `toppra` required `CC=/usr/bin/gcc` (conda GCC header conflict)
+
+#### π0.5 → ManiSkill Integration (End-to-End Verified)
+
+- **Architecture:** openpi policy server (port 8000, `.venv` Python 3.11) ↔ openpi-client (ManiSkill env, `gaussian_grouping` Python 3.10)
+- **Action mapping:** π0.5 DROID output `(15, 8)` → take first step `[:7]` (drop terminate flag) → clip to `[-1, 1]` → ManiSkill `pd_ee_delta_pose`
+- **Image mapping:** ManiSkill render (512x512) → resize to 224x224 uint8 → both `exterior_image_1_left` and `wrist_image_left` (ManiSkill has no default wrist cam)
+- **State mapping:** ManiSkill `qpos[:7]` → `joint_position`, `qpos[7]` → `gripper_position`
+- **Result:** Robot moves coherently (not random) but doesn't complete pick task. Expected — π0.5 pretrained on real DROID data, not ManiSkill sim. Action scale and visual domain differ.
+- **Key insight for paper:** This confirms π0.5 can receive images from any source and produce actions. Fine-tuning on our 3DGS synthetic data will adapt it to our visual domain.
+- **Output:** `pi05_maniskill_demo.mp4` (51 frames), start/end frame PNGs
+
+#### Adapter v2: Correct Action Format (LIBERO, not DROID)
+
+- **Critical discovery:** `pi05_droid` outputs **joint velocities** (8-dim), NOT delta EE pose. `pi05_libero` outputs **delta EE pose** (7-dim) which matches ManiSkill's `pd_ee_delta_pose` 1:1.
+- **LIBERO action format:** `[Δx, Δy, Δz, Δrx, Δry, Δrz, gripper]` (7-dim, meters/radians, quantile denormalized)
+- **LIBERO state format:** `[ee_pos(3), ee_axis_angle(3), gripper_qpos(2)]` (8-dim)
+- **Downloaded `pi05_libero` checkpoint** to `~/.cache/openpi/` (~6 GB)
+- **Adapter written:** `src/adapters/pi05_maniskill.py`
+  - `maniskill_obs_to_pi05()`: ManiSkill obs → LIBERO input (tcp_pose → axis-angle, qpos → gripper, resize 224x224)
+  - `pi05_action_to_maniskill()`: LIBERO actions → ManiSkill (take step from chunk, clip [-1,1], scale factor)
+  - `run_episode()`: Full loop with replanning every N steps
+- **Test result:** Robot moves purposefully (approaches cube, opens gripper) but doesn't complete pick (visual domain gap). Action format confirmed correct.
+- **Normalization details:** π0.5 uses quantile denormalization. Raw model output in [-1,1] → `(x+1)/2 * (q99-q01) + q01` → absolute units (meters, radians)
+- **Action scale tuning needed:** ManiSkill controller gains differ from LIBERO's robosuite. The `action_scale` parameter in the adapter controls this.
 
 **Week 2 Checkpoint:** Real grasp poses + scene editing + first rendered training images
 
@@ -227,6 +414,399 @@ cam_poses = compute_camera_poses(traj)       # for 3DGS rendering
 - [ ] EvoHome-Bench materials: overview figure, failure analysis
 
 **Week 6 Checkpoint:** All ablations done + analysis complete
+
+---
+
+---
+
+### Mar 17 (Mon) — late evening — Strategic Decisions (TBD)
+
+#### Paper Framing: Data Source for VLA Fine-Tuning — TBD
+
+Three options identified for how to generate the training data that fine-tunes the VLA:
+
+**Framing A: Sim demos only (simplest)**
+- Use simulator's built-in motion planner to generate expert demonstrations
+- Focus paper contribution on CL method (per-env LoRA + TFA + CARS)
+- 3DGS pipeline shown as proof-of-concept for real-world, not used in main experiments
+- Risk: reviewers say "what's novel about fine-tuning on sim demos?"
+
+**Framing B: 3DGS pipeline only (purist)**
+- Use 3DGS pipeline even in simulation (render sim → reconstruct → edit → gsplat)
+- Technically impressive but hard to justify when sim has better alternatives
+- Risk: reviewers say "why not just use the sim's own trajectory generator?"
+
+**Framing C: Compare both (strongest, recommended if time permits)**
+- Baseline 1: sim motion planner demos → fine-tune VLA
+- Baseline 2 (ours): 3DGS synthetic data → fine-tune VLA
+- Show 3DGS achieves comparable performance to sim demos
+- Argument: "In the real world, sim demos don't exist — 3DGS is the only option"
+- CL story works with either data source (orthogonal contribution)
+- Risk: most work, tight on 10-week timeline
+
+**Decision: TBD.** Start with Framing A (fastest to get results), build toward C if time permits. The CL contribution (per-env LoRA + TFA + evolving environments) stands regardless of data source.
+
+#### Evaluation Platform: Dual-Track — TBD
+
+Running both in parallel, will decide which to use for the paper:
+
+**Track 1: LIBERO on 5090 (fast path)**
+- π0 already works at ~90%+ success (existing checkpoint)
+- Modify environments via BDDL (add/remove objects, change layout)
+- Show degradation → CL method → recovery
+- Limitation: MuJoCo rendering, less photorealistic
+
+**Track 2: ManiSkill 3 + fine-tune π0 on Hopper (slow path)**
+- π0 currently 0% on ManiSkill (needs fine-tuning on ManiSkill demos)
+- Generate demos via ManiSkill's motion planner (automatic)
+- Convert to openpi format → LoRA fine-tune π0 on Hopper
+- Better rendering (RT mode), GPU-parallel evaluation on A100
+- Limitation: ~1 week setup before experiments can start
+
+**Decision: TBD.** Start LIBERO now (immediate results). Submit ManiSkill fine-tuning to Hopper in parallel. Decide primary benchmark by Week 3 based on which produces better results.
+
+#### VLA Backbone Choice — TBD
+
+- **π0** as pretrained backbone (DROID/LIBERO checkpoints available)
+- Incorporate **π0.5's knowledge insulation** into our CL framework
+- Add **per-env LoRA** (VLM) + **TFA** (action decoder) for continual adaptation
+- Paper framing: "We build on π0 architecture, add insulation [cite π0.5], and propose per-env LoRA + TFA for environment-level CL"
+- Not attacked because: (1) π0.5 is not fine-tuned on any sim benchmark, (2) we clearly cite the architectural choices, (3) our contribution is the CL method + data pipeline, not the base VLA
+
+Available simulation checkpoints:
+- `pi0_libero` — π0 on LIBERO (~90%+)
+- `pi05_libero` — π0.5 on LIBERO (96.85%) ← strongest
+- `pi0_aloha_sim` — π0 on ALOHA sim
+- Neither has ManiSkill checkpoint → ManiSkill requires fine-tuning either way
+
+**Decision: TBD.** If LIBERO → use π0.5 directly (96.85%, no training needed). If ManiSkill → fine-tune π0 or π0.5 on ManiSkill demos (both need same work).
+
+#### ManiSkill VLA Landscape — No Public π0/π0.5 Checkpoint Exists
+
+| Model | ManiSkill checkpoint public? | Method | Best result |
+|-------|------------------------------|--------|-------------|
+| π0 | **No** | piRL did RL fine-tuning (not released) | 85.7% |
+| π0.5 | **No** | piRL did RL fine-tuning (not released) | 84.8% |
+| OpenVLA | Yes (HuggingFace) | SFT + PPO | 97.66% |
+| Octo | Yes (HuggingFace) | SFT | 9-90% |
+
+**Potential bonus contribution:** If we fine-tune π0.5 on ManiSkill and release the checkpoint, this would be the **first publicly available π0.5-ManiSkill model**. Low effort, high community impact.
+
+#### ManiSkill Fine-Tuning Pipeline (if we go this route)
+
+```
+ManiSkill motion planning demos (.h5, no images)
+    ↓  replay_trajectory (add RGB + pd_ee_delta_pose)
+ManiSkill demos with rendered images (.h5)
+    ↓  ManiSkill-to-LeRobot converter (official, PR #1174)
+LeRobot v2.1 dataset (Parquet + MP4)
+    ↓  openpi compute_norm_stats.py
+    ↓  openpi train.py (LoRA fine-tune π0.5, config modeled on pi05_libero)
+π0.5-ManiSkill checkpoint
+```
+
+Key gotchas: openpi needs LeRobot v2.1 (not v3.0), action format must be 7-dim delta EE pose, state must be 8-dim (ee_pos + axis_angle + gripper_qpos), no wrist camera by default in ManiSkill (duplicate base view or add one).
+
+---
+
+### Mar 18 (Tue) — ManiSkill Dataset Generation
+
+#### Overnight Replay Approach — FAILED
+
+- **Attempt 1 (motionplanning demos):** Replay with `--target-control-mode pd_ee_delta_pose` → 0.6-30% success. Control mode conversion (joint pos → delta EE) fails for most trajectories via IK solver.
+- **Attempt 2 (RL demos + `--use-env-states`):** RL demos already in `pd_ee_delta_pose`, but replay failed because demos were recorded with `physx_cuda` (GPU sim) and replay ran on CPU sim. States diverge due to floating-point differences → 3-4 episodes saved per task regardless of tier.
+- **Attempt 3 (RL demos + `--use-env-states --sim-backend gpu`):** Fixed GPU mismatch → 100% replay for PickCube (10/10). But other tasks still only 3-4 episodes — same PhysX non-determinism issue.
+- **Conclusion:** Replay-based approach is fundamentally unreliable for GPU-sim recorded demos. Abandoned replay entirely.
+
+#### Fresh Rollout Approach — SUCCESS
+
+- **New strategy:** Load pre-trained RL policy checkpoint, run live in ManiSkill with RGB rendering, record trajectories directly. No replay = no determinism issues.
+- **Script:** `scripts/generate_fresh_demos.py`
+- **Critical bug found:** ManiSkill's PPO baseline uses **Tanh** activation, not ELU. Using ELU → 0% success. Using Tanh → 99% success. Activation function must match exactly.
+- **RL policy success rates:** PickCube 98.6%, StackCube 93.5%, PullCube 100%, LiftPegUpright 98.9%
+
+#### Episode Length Investigation
+
+- **RL policy demos: ~15 steps** per episode (policy solves tasks aggressively fast)
+- **ManiSkill standard: 50 steps** (`max_episode_steps=50` in official env registration)
+- **LIBERO: 200-400 steps** at 20Hz
+- **DROID: ~250 steps** at 15Hz
+- **RPD (VLA on ManiSkill):** Explicitly filtered to ≤50 steps for VLA fine-tuning
+- **Conclusion:** 50 steps at 20Hz is the ManiSkill standard and validated by RPD. Our episodes are short (~15 steps actual manipulation + idle after success) but this matches what RPD used.
+
+#### Action Scaling Experiment
+
+Tested scaling down RL policy actions for smoother trajectories:
+- scale=1.0: 100% success, 15 steps (jerky)
+- scale=0.5: 95% success, 24 steps (smoother)
+- scale=0.3: 40% success, 38 steps (too slow for policy)
+- scale=0.1: 0% success (policy can't finish)
+- **Decision:** Keep scale=1.0 (matching RPD's approach). VLA action horizon handles the step count.
+
+#### VLA Training Data Format
+
+π0.5 fine-tuning requires `action_horizon` prediction. From 50-step episodes with `action_horizon=10`:
+- Sliding window produces ~40 training samples per episode
+- 2000 episodes × 40 = ~80,000 samples per task
+- 4 tasks = ~320,000 total training samples
+
+#### Final Dataset Generation (Running, Started Mar 18 ~1:00 PM)
+
+- **Script:** `scripts/generate_fresh_demos.py --task all --num-demos 2000`
+- **Log:** `logs/fresh_demos_all.log` (PID 287180)
+- **Tasks:** PickCube-v1, StackCube-v1, PullCube-v1, LiftPegUpright-v1
+- **Per episode:**
+  - `rgb`: (T+1, 256, 256, 3) uint8 — RT-fast rendered, gzip compressed
+  - `actions`: (T, 7) float32 — delta EE pose [dx,dy,dz,drx,dry,drz,gripper]
+  - `state`: (T+1, 8) float32 — LIBERO format [ee_pos(3), axis_angle(3), gripper_qpos(2)]
+  - `tcp_pose`: (T+1, 7) float32, `qpos`: (T+1, 9) float32
+  - `instruction`: per-episode language string (e.g., "pick up the red cube and move it to the green target")
+- **Settings:** max_episode_steps=50, control_freq=20Hz, 256×256 RGB, gzip compression
+- **Estimated:** ~8 GB total, ~36 min generation time
+- **Visualizations saved to:** `/home/bwang25/Desktop/Manipulation/visualization/`
+  - Per-task: start/mid/end PNGs, slow-motion MP4s, 4-episode grid MP4s
+
+#### Overnight Dataset Generation (Started Mar 17 ~10:35 PM)
+
+- **Script:** `scripts/generate_maniskill_dataset.sh` (PID 173951)
+- **Log:** `logs/dataset_generation.log`
+- **Tasks:** PickCube-v1, StackCube-v1, PegInsertionSide-v1, LiftPegUpright-v1, PullCube-v1
+- **Tiers:** 10, 50, 200, 500, 1000 demos per task (5 tiers × 5 tasks = 25 replay jobs)
+- **Output:** `~/.maniskill/demos/<task>/tier_<N>/trajectory.rgb.pd_ee_delta_pose.*.h5`
+- **Note:** motionplanning→pd_ee_delta_pose conversion has ~30-50% success rate (expected for control mode conversion). Larger tiers will have enough valid episodes.
+- **Estimated time:** 4-8 hours total
+- **Next step (morning):** Check log, verify rendered h5 files, then convert to LeRobot format
+
+---
+
+### Mar 17 (Mon) — late evening — Competitor Analysis: Continual Learning for VLAs
+
+#### CRL-VLA (arXiv 2602.03445, Feb 2026)
+**"CRL-VLA: Continual Vision-Language-Action Learning"** — Westlake/ZJU + HKU
+
+- **Problem:** Task-level CL for VLAs via on-policy RL (PPO). New tasks arrive sequentially; model must learn without forgetting old tasks.
+- **VLA backbone:** OpenVLA-OFT (not π0.5)
+- **CL method:** RL-algorithmic — dual-critic architecture with frozen Goal-Conditioned Value critic (anchors old task values) + trainable MC critic (drives new task learning). Asymmetric advantage regulation bounds forgetting theoretically.
+- **No LoRA, no EWC, no parameter isolation** — purely critic/advantage-side approach.
+- **Benchmark:** LIBERO (task-stream CL). Single-task CL: 0.98 FAR with 0.03 forgetting (near-oracle).
+- **No synthetic data, no 3DGS.**
+- **Key limitation for us:** Task-level CL only — physical environment never changes. Only the language instruction changes between tasks.
+
+#### LifeLong-RFT (arXiv 2602.10503, Feb 2026)
+**"Towards Long-Lived Robots: Continual Learning VLA Models via Reinforcement Fine-Tuning"** — UCAS/CASIA
+
+- **Problem:** Catastrophic forgetting during sequential SFT of VLAs. Proposes GRPO (Group Relative Policy Optimization, from DeepSeek-Math) as a drop-in replacement for SFT.
+- **VLA backbone:** NORA-Long (3B, discrete actions via FAST+ tokenizer) — NOT π0.5 or OpenVLA
+- **CL method:** Offline RL via GRPO + Multi-Dimensional Process Reward (token accuracy + trajectory alignment + format compliance). Experience replay with 5 demos per old task.
+- **Full-parameter finetuning** — no LoRA, no parameter isolation.
+- **Benchmark:** LIBERO (task-stream CL) + SimplerEnv + real-world Franka.
+- **Key results:** +22% AUC improvement over SFT on LIBERO CL. LIBERO-Goal: AUC 54.4 → 90.3.
+- **Real-world CL:** Beats π0 (SFT) and OpenVLA (SFT) on sequential Franka tasks.
+- **No synthetic data, no 3DGS.** Still needs 10 demos per new task + 5 replay demos per old task.
+- **Key limitation for us:** Task-level CL only. No environment/visual domain change.
+
+#### Simple Recipe Works (arXiv 2603.11653, Mar 2026)
+**"Simple Recipe Works: VLAs are Natural Continual Learners with RL"** — UT Austin
+
+- **Key finding:** Simple sequential LoRA fine-tuning with RL **already achieves near-zero forgetting** across OpenVLA-OFT, π0, and OpenVLA on 5 benchmarks (LIBERO suites + RoboCasa + ManiSkill).
+- **Explanation:** Large pretrained models + LoRA's low-rank constraint + on-policy RL = implicit anti-forgetting.
+- **Implication for us:** Supports our use of LoRA as a strong CL primitive. But they only test task-level CL, not environment-level.
+
+#### Positioning of EvoHome vs All Three
+
+| Dimension | CRL-VLA | LifeLong-RFT | Simple Recipe | **EvoHome (Ours)** |
+|-----------|---------|-------------|---------------|-------------------|
+| **CL unit** | Task | Task | Task | **Environment** |
+| **What changes** | Language goal | Language goal | Language goal | **Physical world** (objects, layout) |
+| **Demos needed** | Online RL rollouts | 10 per new task | Online RL rollouts | **Zero** (3DGS scan only) |
+| **Synthetic data** | None | None | None | **3DGS pipeline** (core contribution) |
+| **CL mechanism** | Dual-critic RL | GRPO + replay | LoRA + RL | Per-env LoRA + TFA + CARS |
+| **VLA backbone** | OpenVLA-OFT | NORA-Long (3B) | OpenVLA/π0 | **π0.5** |
+| **Benchmark** | LIBERO | LIBERO | LIBERO+RoboCasa+ManiSkill | **EvoHome-Bench** (novel) |
+
+**Our key differentiators (none of the three have these):**
+1. **Environment-level CL** — the physical world changes, not just the task. This is a harder, more realistic problem.
+2. **Zero-demonstration adaptation** — no new human demos or RL interaction needed. A phone scan of the new environment → 3DGS → unlimited synthetic data.
+3. **3DGS data synthesis pipeline** — entirely novel in the VLA continual learning space.
+4. **Generative replay via 3DGS Environment Bank** — replay from neural scene representations, not stored demos.
+
+**Potential concern:** "Simple Recipe Works" shows LoRA + RL already handles task-level CL well. Our response: task-level CL is solved (or nearly so); **environment-level CL is the open problem**, and it requires a data pipeline (3DGS) that task-level methods don't address.
+
+### Mar 18 (Tue) — continued, afternoon — Pipeline Visualization + Trajectory Smoothing
+
+#### Pipeline Visualization Script (`scripts/visualize_pipeline.py`)
+
+- **Created comprehensive Open3D + matplotlib visualization** with 5 modes:
+  - `scene`: 3DGS point cloud with object segmentation highlighted (tested on bear scene)
+  - `grasps`: AnyGrasp detections with gripper frames and coordinate axes (scale-adaptive sizing)
+  - `trajectory`: 3D pick-place trajectory with phase-colored segments, gripper state indicators
+  - `plot2d`: Matplotlib 2D analysis — XZ/XY views, action delta profiles, gripper state timeline
+  - `all`: Run all above in sequence
+- **Mock data mode** (`--mock`): Synthetic tabletop scene at robot scale for instant testing without GPU/3DGS
+- **Real data mode**: Tested on bear scene (3M Gaussians, 338K object Gaussians, 256 object classes)
+- **AnyGrasp on real 3DGS — VERIFIED:** Extracted bear object point cloud from segmented 3DGS → AnyGrasp detected 10 grasps (scores 0.05-0.07, low because bear scene is COLMAP-scale, not metric tabletop)
+- **Outputs saved:** `logs/trajectory_viz_v2.png`, `logs/grasps_real_bear_v2.png`, `logs/scene_viz_v2.png`, `logs/trajectory_plot2d.png`
+
+#### ManiSkill RL vs Motion-Planned Trajectory Comparison
+
+- **Key finding: Both ManiSkill motion planner AND our TrajectoryGenerator produce piecewise-linear trajectories**
+  - ManiSkill `plan_screw()` (mplib): straight-line screw motion in SE(3), time-optimal via TOPP-RA. Joint-space diffs std ~0.01, 50-86 steps, 5 plateau steps per trajectory.
+  - Our `TrajectoryGenerator`: lerp+slerp interpolation between keyframes. 83 waypoints, constant actions within phases.
+  - **RL policy trajectories are fundamentally different:** curved paths, continuously varying actions (diff std ~0.3), 12-17 steps, no plateaus, bang-bang behavior.
+- **Decision: Keep linear trajectories** — they provide clearer action patterns for VLA learning. The visual signal (3DGS images) is the dominant adaptation signal, not trajectory shape.
+- **Comparison plots saved:** `logs/maniskill_rl_trajectories_xz.png`, `logs/maniskill_rl_actions.png`, `logs/mp_vs_rl_actions.png`
+
+#### Trajectory Corner Smoothing
+
+- **Problem identified:** Sharp direction changes at phase boundaries within the same logical move (e.g., transit_pick → pre_grasp = 36.7°, transit_place → pre_place = 119.9°)
+- **Solution:** Added `smooth_corners()` post-processing method to `TrajectoryGenerator`
+  - Gaussian-weighted local blending around within-move phase boundaries only
+  - `SMOOTH_TRANSITIONS` set defines which junctions to smooth: `{(transit_pick, pre_grasp), (transit_place, pre_place)}`
+  - Junctions between separate moves (e.g., lift → transit_place) intentionally left sharp
+  - Grasp and release contact poses pinned (zero drift)
+  - Configurable `radius` parameter (default 3, tested up to 5)
+- **Results (radius=3):**
+  - transit_pick → pre_grasp: 36.7° → 18.5°
+  - transit_place → pre_place: 119.9° → 83.6°
+  - lift → transit_place: 60.1° → 60.1° (unchanged, separate moves)
+  - Max position deviation: 24mm, mean: 1.2mm
+- **All 22 trajectory tests still passing**
+- **Comparison plots saved:** `logs/corner_smoothing_comparison.png`, `logs/selective_smoothing.png`
+
+### Mar 18 (Tue) — evening — ManiSkill → 3DGS Reconstruction Pipeline
+
+#### ManiSkill Multi-View Capture (`scripts/capture_maniskill_multiview.py`)
+
+- **Script captures multi-view images** of ManiSkill tabletop scene for 3DGS reconstruction
+- **YCB objects on table:** tomato soup can, mustard bottle (fell off), mug, bowl, banana + Franka Panda arm
+- **90 views** at 512x512 with full RT ray tracing (32 spp, OptiX denoiser)
+- Camera orbits hemisphere: radius 0.45-0.55m, elevation 25-60°, FOV 75°
+- Custom camera entity with wider FOV than ManiSkill defaults
+- PickCube default objects hidden during capture
+- **Output:** `data/maniskill_tabletop/images/` (90 PNGs)
+
+#### COLMAP Challenges with Synthetic Renders
+
+- **COLMAP registered all 90/90 images** but only triangulated **3 sparse points**
+- Root cause: synthetic renders have too-perfect surfaces → SIFT features match but triangulation fails due to lack of texture variance
+- **Solution: Bypass COLMAP triangulation entirely** — wrote known camera poses directly in COLMAP text format
+- Camera intrinsics known exactly (PINHOLE, fx=fy=333.6, 512x512)
+- Generated **12,500 dense seed points** covering table, floor, objects, robot region
+- **Key insight:** For sim-to-3DGS pipeline, COLMAP SfM is unnecessary — camera poses are known from the simulator
+
+#### Segmentation Masks (`scripts/generate_masks_maniskill.py`)
+
+- ManiSkill's `default` shader supports Segmentation texture; RT shader does not
+- Generated **grayscale integer ID masks** (mode=L) from actor-level segmentation
+- 90 masks at 512x512, unique IDs: 0-27 (table, floor, robot parts, 4 objects)
+- Required matching camera poses between RT capture and default-shader mask generation
+
+#### Gaussian Grouping Training — SUCCESS
+
+- **Config:** 7000 iterations, 30 object classes, 12,500 initial points
+- **Result:** 336,112 Gaussians (101 MB PLY), trained in ~5 min on RTX 5090
+- **Reconstruction quality:** Excellent — wood table texture, object shapes, robot arm, shadows all faithfully reconstructed
+- **Segmentation quality:** Objects correctly separated from table and floor, each with unique ID
+- **Output:** `data/maniskill_tabletop/output_v3/`
+  - `point_cloud/iteration_7000/point_cloud.ply` + `classifier.pth`
+  - `train/ours_7000/renders/` (90 3DGS renders)
+  - `train/ours_7000/gt/` (90 GT images for comparison)
+  - `train/ours_7000/concat/` (side-by-side GT|Render|Seg comparisons)
+
+#### LeRobot Dataset Conversion — VERIFIED
+
+- **Script:** `scripts/convert_maniskill_to_lerobot.py`
+- **Verification script:** `scripts/verify_lerobot_dataset.py`
+- **Result:** 8,000 episodes, 94,865 frames, 12.8 GB at `~/.cache/huggingface/lerobot/bwang25/maniskill_pi05`
+- All checks passed: episode counts match, frame lengths match, images valid, actions in [-1,1], instructions present
+- Ready for π0.5 LoRA fine-tuning
+
+#### Pipeline Validated: ManiSkill RT → Known Poses → Gaussian Grouping → 3DGS + Segmentation
+
+This is the first end-to-end test of the sim-to-3DGS pipeline. The metric-scale reconstructed scene can now be used for: AnyGrasp grasp detection → trajectory generation → gsplat rendering → VLA training data.
+
+#### Full Pipeline End-to-End: 3DGS → AnyGrasp → Trajectory → gsplat Render
+
+- **AnyGrasp on metric-scale 3DGS:** Extracted tabletop region from reconstructed scene → 5 grasps detected (scores 0.10-0.22, widths 0.058-0.079m within Franka Panda range)
+- **Trajectory from real grasps:** Best grasp → pick-place trajectory (83 waypoints, smoothed), 82 actions in π0.5 delta format
+- **gsplat rendering verified:** Identified camera convention mismatch (gsplat uses OpenCV W2C = [R | -R@pos], not OpenGL). Fixed and verified — renders match Gaussian Grouping quality.
+- **Trajectory visualization video:** `logs/trajectory_render/pick_place_trajectory.mp4` — 3DGS rendered scene with animated trajectory overlay (phase colors, gripper state, grasp/place markers)
+
+#### Hybrid Rendering Architecture — Design Decisions (Mar 18)
+
+Resolved 6 design bottlenecks for moving Gaussian clusters along robot trajectories:
+
+**Bottleneck 1 — Grasp anchor point: RESOLVED**
+- Use grasp contact position (from AnyGrasp) as the SE(3) anchor
+- Physically correct: object pivots around contact point, not centroid
+- `T_offset = inv(T_gripper_at_grasp) @ T_object`
+
+**Bottleneck 2 — Gaussian rotation: RESOLVED**
+- Full SE(3) transform on both positions AND quaternions
+- `pos_new = R_delta @ (pos_old - anchor) + anchor_new`
+- `quat_new = quat_delta * quat_old`
+- No shortcuts — maintains physical correctness even with wrist rotation
+
+**Bottleneck 3 — Robot arm frozen in 3DGS: RESOLVED**
+- All major VLAs (π0, π0.5, OpenVLA) use third-person camera where arm is visible and critical
+- π0.5 takes 3 images: `base_0_rgb` (third-person) + `left_wrist_0_rgb` + `right_wrist_0_rgb`
+- **Solution: Hybrid depth compositing**
+  - ManiSkill renders robot arm at each trajectory step (RGB + depth + segmentation mask, robot = actor IDs 2-14)
+  - gsplat renders 3DGS scene + moved object Gaussians (RGB+D mode)
+  - Per-pixel depth comparison: `final[px] = closer_surface_rgb`
+  - Handles occlusion both directions (arm in front of object AND object in front of arm)
+
+**Bottleneck 4 — Object removal / inpainting: RESOLVED**
+- **Compositional 3DGS approach**: reconstruct empty environment and individual objects separately
+- Empty table has full surface (no occlusion from objects)
+- Each object is a separate Gaussian cluster stored in SceneObjectRegistry
+- At render time: concatenate environment Gaussians + object Gaussians at desired SE(3) poses
+- No inpainting ever needed — environment evolution = swap objects in/out of composition
+
+**Bottleneck 5 — Shadows baked into 3DGS: RESOLVED**
+- Not a concern. VLA images are 224×224 — shadows are negligible pixels
+- Geometry and object identity are what the VLA learns from
+- Simulator shadows are already low quality
+
+**Bottleneck 6 — Rendering speed: RESOLVED — it's a strength**
+- ~10s per trajectory (AnyGrasp + traj gen + dual render + compositing)
+- 500 trajectories per environment in ~1.5 hours on single 5090
+- 5 environments × 500 trajectories = 2,500 trajectories in ~10 hours
+- Compare: 2,500 real-world demonstrations would take weeks of human effort
+
+#### Final Rendering Pipeline Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ For each trajectory step:                                │
+│                                                          │
+│  ManiSkill                        gsplat                 │
+│  ┌──────────────┐                ┌──────────────────┐   │
+│  │ Set robot    │                │ Environment 3DGS  │   │
+│  │ joint pos    │                │ (empty table)     │   │
+│  │ via IK       │                │        +          │   │
+│  │              │                │ Object Gaussians  │   │
+│  │ Render:      │                │ (SE(3) moved to   │   │
+│  │  RGB + Depth │                │  current EE pos)  │   │
+│  │  + Seg Mask  │                │                   │   │
+│  │ (robot only) │                │ Render: RGB + D   │   │
+│  └──────┬───────┘                └────────┬──────────┘   │
+│         │                                 │              │
+│         └──────────┐   ┌──────────────────┘              │
+│                    ▼   ▼                                 │
+│              ┌─────────────────┐                         │
+│              │ Depth Composite │                         │
+│              │ Per-pixel:      │                         │
+│              │  closer wins    │                         │
+│              └────────┬────────┘                         │
+│                       ▼                                  │
+│              ┌─────────────────┐                         │
+│              │ (Image, Action, │                         │
+│              │  Language)      │                         │
+│              │ Training Triplet│                         │
+│              └─────────────────┘                         │
+└─────────────────────────────────────────────────────────┘
+```
 
 ---
 

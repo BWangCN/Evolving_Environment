@@ -261,6 +261,91 @@ class TrajectoryGenerator:
 
         return chained
 
+    # Phase transitions that are within the same logical move and should
+    # be smoothed.  Transitions NOT listed here (e.g. lift → transit_place)
+    # are between two separate moves and the sharp direction change is
+    # intentional.
+    SMOOTH_TRANSITIONS: set[tuple[str, str]] = {
+        ("transit_pick", "pre_grasp"),     # approaching object
+        ("transit_place", "pre_place"),    # descending to place
+    }
+
+    def smooth_corners(
+        self,
+        traj: Trajectory,
+        radius: int = 3,
+        pinned_phases: set[str] | None = None,
+    ) -> Trajectory:
+        """Smooth sharp corners at within-move phase boundaries.
+
+        Only smooths transitions that are part of the same logical move
+        (e.g. transit_pick → pre_grasp).  Transitions between separate
+        moves (e.g. lift → transit_place) are left sharp intentionally.
+
+        Args:
+            traj: Trajectory to smooth (modified in place and returned).
+            radius: Number of waypoints on each side of a boundary to blend.
+                Larger radius = smoother corners but more deviation from
+                original path.  Default 3 works well for steps_per_segment=10.
+            pinned_phases: Phases whose boundary waypoints must NOT be moved.
+                Defaults to {"grasp", "release"} — contact poses stay exact.
+
+        Returns:
+            The same Trajectory object, with positions smoothed in place.
+        """
+        if pinned_phases is None:
+            pinned_phases = {"grasp", "release"}
+
+        wps = traj.waypoints
+        n = len(wps)
+        if n < 5:
+            return traj
+
+        # Find phase-boundary indices that qualify for smoothing
+        boundaries = []
+        for i in range(1, n):
+            if wps[i].phase != wps[i - 1].phase:
+                transition = (wps[i - 1].phase, wps[i].phase)
+                if transition not in self.SMOOTH_TRANSITIONS:
+                    continue
+                if wps[i].phase in pinned_phases or wps[i - 1].phase in pinned_phases:
+                    continue
+                boundaries.append(i)
+
+        if not boundaries:
+            return traj
+
+        # Build Gaussian kernel weights
+        sigma = radius / 2.0
+        kernel = np.array([
+            np.exp(-0.5 * (k / sigma) ** 2) for k in range(-radius, radius + 1)
+        ])
+        kernel /= kernel.sum()
+
+        # Collect original positions (copy)
+        orig_pos = np.array([w.position.copy() for w in wps])
+
+        # Blend around each boundary
+        for bi in boundaries:
+            lo = max(0, bi - radius)
+            hi = min(n - 1, bi + radius)
+            for i in range(lo, hi + 1):
+                # Don't move pinned-phase waypoints
+                if wps[i].phase in pinned_phases:
+                    continue
+                # Weighted average of neighbours from original positions
+                w_sum = np.zeros(3, dtype=np.float64)
+                w_total = 0.0
+                for j in range(-radius, radius + 1):
+                    idx = i + j
+                    if 0 <= idx < n:
+                        ki = j + radius  # kernel index
+                        w_sum += kernel[ki] * orig_pos[idx]
+                        w_total += kernel[ki]
+                wps[i].position = (w_sum / w_total).astype(np.float32)
+
+        return traj
+
     def _add_segment(
         self,
         traj: Trajectory,

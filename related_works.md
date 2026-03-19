@@ -42,7 +42,17 @@ Continual learning (CL) addresses the challenge of learning new tasks without fo
 
 **LoRA-based continual learning.** Low-Rank Adaptation (LoRA) \cite{hu2022lora} enables parameter-efficient finetuning by learning low-rank weight updates. Recent works explore LoRA for CL: InfLoRA \cite{liang2024inflora} introduces interference-free LoRA that reduces inter-task interference. O-LoRA \cite{wang2023olora} learns orthogonal LoRA subspaces for different tasks. Per-task LoRA adapters avoid forgetting by design — each task has its own adapter while the base model is frozen. **Our approach uses per-environment LoRA adapters on the VLM backbone, ensuring zero cross-environment forgetting in the perception component.**
 
-**Continual learning for manipulation.** LIBERO \cite{liu2024libero} provides a lifelong robot learning benchmark with continual task suites. ConTinTin \cite{gao2025contintin} studies continual instruction tuning for VLAs. CL-SLAM-VLA explores simultaneous localization and VLA adaptation. **However, no existing work addresses the specific setting of evolving home environments where the distribution shift comes from changing objects and layouts rather than changing tasks. Our EvoHome-Bench is the first benchmark to formalize this problem.**
+**Continual learning for manipulation.** LIBERO \cite{liu2024libero} provides a lifelong robot learning benchmark with continual task suites. ConTinTin \cite{gao2025contintin} studies continual instruction tuning for VLAs. CL-SLAM-VLA explores simultaneous localization and VLA adaptation.
+
+**Concurrent work: Continual learning for VLAs (Feb–Mar 2026).** Three concurrent papers address continual learning specifically for VLA models, but all operate at the task level (new manipulation objectives with the same physical environment):
+
+CRL-VLA \cite{zeng2026crlvla} proposes a dual-critic RL architecture for task-stream CL. A frozen Goal-Conditioned Value critic anchors old task semantics while a trainable MC critic drives adaptation. Using OpenVLA-OFT on LIBERO, they achieve 0.98 FAR with 0.03 forgetting in single-task CL. The approach is purely RL-algorithmic — no parameter isolation or adapters.
+
+LifeLong-RFT \cite{liu2026lifelongrft} replaces SFT with Group Relative Policy Optimization (GRPO, from DeepSeek-Math) for VLA continual fine-tuning. Using NORA-Long (3B, discrete actions) with a Multi-Dimensional Process Reward combining token accuracy, trajectory alignment, and format compliance, they achieve +22% AUC improvement over SFT on LIBERO CL tasks. They still require 10 demonstrations per new task plus 5 replay demos per old task.
+
+Hu et al. \cite{hu2026simplerecipe} ("Simple Recipe Works") show that simple sequential LoRA fine-tuning with RL already achieves near-zero forgetting across OpenVLA-OFT, π0, and OpenVLA on LIBERO + RoboCasa + ManiSkill. Their explanation — large pretrained models + LoRA's low-rank constraint + on-policy RL = implicit anti-forgetting — supports our use of LoRA as a strong CL primitive.
+
+**However, all three address task-level CL only — the physical environment remains fixed and only the manipulation objective changes. None addresses the harder, more realistic problem of environment-level CL where objects are added, removed, or rearranged. Our EvoHome-Bench is the first benchmark to formalize this problem, and our 3DGS-based data synthesis pipeline is the first to enable zero-interaction adaptation to evolving environments.**
 
 **Generative replay.** Instead of storing raw data, generative replay uses a generative model to synthesize replay samples. This approach has been explored with VAEs \cite{shin2017generativereplay} and GANs for classification CL. DDGR \cite{gao2023ddgr} demonstrated that diffusion models produce higher-quality replay samples than VAEs/GANs for class-incremental learning. **Our 3DGS Environment Bank extends generative replay to 3D scenes — previous environments are stored as compact 3DGS representations (~50-200MB each) that can render unlimited novel-view replay samples with photorealistic quality, avoiding the storage cost of raw images and the distribution collapse of replaying identical training data.**
 
@@ -73,5 +83,16 @@ Reliable grasp pose estimation is essential for our trajectory generation pipeli
 | 3DGS for manipulation data | RoboSplat (RSS 2025) | + Zero per-object demos + Continual learning + 3DGS Environment Bank |
 | VLA adaptation | TwinRL-VLA | + No RL reward engineering + 3DGS-based synthetic data |
 | Continual manipulation | LIBERO | + Evolving environments (not just new tasks) + EvoHome-Bench |
-| CL for VLAs | InfLoRA, O-LoRA | + Decoupled VLM/decoder strategy + TFA for flow matching |
+| CL for VLAs | CRL-VLA, LifeLong-RFT, Simple Recipe | + Environment-level CL (not task-level) + Zero demos + 3DGS data pipeline |
+| CL mechanism | InfLoRA, O-LoRA | + Decoupled VLM/decoder strategy + TFA for flow matching |
 | Manipulation benchmark | BEHAVIOR-1K | + Continual adaptation protocol + Forgetting metrics |
+
+**Key positioning vs concurrent CL-for-VLA work (Feb–Mar 2026):**
+
+| | CRL-VLA | LifeLong-RFT | Simple Recipe | **Ours** |
+|--|---------|-------------|--------------|---------|
+| CL level | Task | Task | Task | **Environment** |
+| What changes | Language goal | Language goal | Language goal | **Physical world** |
+| New demos needed | RL rollouts | 10/task | RL rollouts | **Zero** |
+| 3DGS | No | No | No | **Core contribution** |
+| VLA backbone | OpenVLA-OFT | NORA-Long 3B | OpenVLA/π0 | **π0.5** |

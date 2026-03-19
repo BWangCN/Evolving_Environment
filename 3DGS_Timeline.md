@@ -51,39 +51,64 @@
 - [x] ManiSkill 3 identified as GPU-parallel A100-compatible evaluation alternative (pending decision)
 - [x] Development strategy: **5090 first** (debug E2E) → Hopper (scale up)
 
-### 3DGS + VLA Setup (Linux 5090) — in progress
-- [ ] Gaussian Grouping environment setup + first scene reconstruction
-- [ ] π0.5 (openpi) inference verification
-- [ ] AnyGrasp installation + license
-- [ ] Minimal E2E pipeline: object point cloud → AnyGrasp → motion plan → Gaussian edit → gsplat render → π0.5 input format check
+### 3DGS + VLA Setup (Linux 5090) ✅ DONE (Mar 17)
+- [x] Gaussian Grouping environment setup + first scene reconstruction (bear, 96 images, 30K iters)
+- [x] Gaussian Grouping scene editing: object removal + 3D inpainting (LaMa + fine-tune) verified
+- [x] gsplat 1.5.3 installed, PLY bridge verified (9.5M Gaussians → 640x480 render)
+- [x] AnyGrasp SDK installed (MinkowskiEngine 0.5.4 + pointnet2 compiled for Blackwell SM 120)
+- [x] π0.5 (openpi) inference verified: `pi05_droid` config → (15, 8) action output
+- [x] AnyGrasp license received + installed (Mar 18). 3,097 grasps detected on bear 3DGS point cloud.
+- [x] Minimal E2E pipeline — **VERIFIED Mar 18:**
+  - [x] Step 1: Extract object point cloud from segmented 3DGS (338K Gaussians for bear, obj_dc features + classifier)
+  - [x] Step 2: AnyGrasp grasp detection (5 grasps on bear object, scores 0.08-0.10)
+  - [x] Step 3: Convert AnyGrasp GraspGroup → GraspPose (rotation matrix → wxyz quaternion)
+  - [x] Step 4: TrajectoryGenerator → 83-waypoint pick-place trajectory, 82 actions (7-dim delta EE)
+  - [ ] Step 5: gsplat render at camera poses → (I, a, l) triplets (code ready, needs tabletop scene for proper scale)
 
-**✅ Checkpoint: All code modules built + 74 tests passing + infrastructure plan locked**
+**✅ Checkpoint: All code modules built + 74 tests passing + infrastructure plan locked + all 4 pipeline components installed & individually verified**
 
 ---
 
 ## Week 2 — Mar 23–29 | AnyGrasp Integration + Scene Editing + First Data
 
 ### AnyGrasp Integration (Linux 5090)
-- [ ] Install AnyGrasp (register license)
-- [ ] Test: 3DGS scene → extract Gaussian positions → point cloud → AnyGrasp → grasp poses
-- [ ] Connect AnyGrasp output to TrajectoryGenerator → verify end-to-end
-- [ ] Replace mock grasp poses with real AnyGrasp output in batch pipeline
+- [x] Install AnyGrasp SDK + MinkowskiEngine + pointnet2 (all compiled for Blackwell SM 120)
+- [x] License received + installed (Mar 18), checkpoint loaded, 3,097 grasps detected on bear 3DGS scene
+- [x] Test: 3DGS scene → extract Gaussian positions → point cloud → AnyGrasp → grasp poses (Mar 18, 10 grasps on bear object)
+- [x] Connect AnyGrasp output to TrajectoryGenerator → verify end-to-end (Mar 18, `scripts/visualize_pipeline.py`)
+- [x] Replace mock grasp poses with real AnyGrasp output in batch pipeline (Mar 18, `scripts/visualize_pipeline.py` grasps mode)
 
 ### Scene Editing (Linux 5090)
-- [ ] Gaussian Grouping: object segmentation on tabletop scene
-- [ ] Object removal + inpainting (LaMa) test
-- [ ] Object relocation (move Gaussian group to new pose)
+- [x] Gaussian Grouping: object removal on bear scene (object ID 34, 764 MB PLY)
+- [x] 3D Inpainting: LaMa pseudo labels + 10K iter fine-tune (2.8 GB PLY, clean result)
+- [x] Object relocation design complete (Mar 18): SE(3) transform on Gaussian positions + quaternions, grasp contact as anchor, hybrid depth compositing with ManiSkill for robot arm
+- [ ] Object relocation implementation: compositional 3DGS (empty env + object clusters) + hybrid rendering code
+- [ ] Gaussian Grouping: object segmentation on **custom tabletop scene** (bear was demo dataset)
 
 ### First Synthetic Data (Linux 5090)
+- [x] gsplat batch rendering: loaded edited PLY (9.5M Gaussians) → rendered from arbitrary camera pose
+- [x] ManiSkill RT → 3DGS reconstruction pipeline verified (Mar 18, 90 views, 336K Gaussians, metric scale)
 - [ ] Render trajectories in 3DGS scene → first (I, a, l) triplets
-- [ ] gsplat batch rendering integration
-- [ ] Visual quality check on rendered images
+- [ ] Visual quality check on rendered training images
 
-### Evaluation Platform (parallel investigation)
-- [ ] Decide: OmniGibson on 5090 (serial, rich assets) vs ManiSkill on Hopper (GPU-parallel, A100-compatible)
-- [ ] If ManiSkill: prototype custom EvoHome task definitions with YCB/custom objects
+### Evaluation Platform ✅ DECIDED (Mar 17)
+- [x] Decide: ~~OmniGibson~~ → **ManiSkill 3** (OmniGibson blocked on RTX 5090, Isaac Sim 5.0 migration pending)
+- [x] ManiSkill 3.0.0b22 installed, PickCube-v1 verified with RT rendering on 5090
+- [x] π0.5 → ManiSkill integration verified (policy server + client, action format mapping)
+- [x] ManiSkill dataset generation: 4 tasks × 2000 demos, fresh RL policy rollouts + RT rendering + language instructions
+- [x] Convert ManiSkill demos to LeRobot v2.1 format (Mar 18, 8000 eps, 94865 frames, verified)
+- [ ] Submit π0.5 LoRA fine-tuning on ManiSkill to Hopper
+- [ ] Prototype custom EvoHome task definitions in ManiSkill (multi-step, LIBERO-Long-style)
 
-**✅ Checkpoint: Real grasp poses + scene editing + first rendered training images**
+### LIBERO Evolving Environment Benchmark — **Assigned to Sal Yang** (NEW, Mar 18)
+- [ ] Set up LIBERO environment on 5090 (Python 3.8 venv + robosuite)
+- [ ] Verify π0.5 baseline on LIBERO-Long (expected ~92.4% success)
+- [ ] Construct evolving environment benchmark: modify LIBERO environments via BDDL (add/remove/reposition objects, change layouts)
+- [ ] Define environment evolution sequence (E1 → E2 → E3 → E4 → E5) within LIBERO
+- [ ] Test baseline VLAs (π0.5, π0) on evolved environments → measure performance degradation
+- [ ] Document benchmark protocol: tasks per environment, evaluation episodes, success criteria
+
+**✅ Checkpoint: Real grasp poses + scene editing + first rendered training images + ManiSkill dataset generated + LIBERO benchmark construction started**
 
 ---
 
