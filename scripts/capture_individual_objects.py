@@ -59,19 +59,8 @@ def capture_single_object(obj_id: str, output_dir: Path, shader: str = "rt"):
     for actor in base_env._hidden_objects:
         actor.set_pose(sapien.Pose(p=[0, 0, -10]))
 
-    # Hide table and floor — object floats in empty space
-    sub = scene.sub_scenes[0]
-    for entity in sub.entities:
-        name = getattr(entity, 'name', '')
-        if 'table' in name or 'ground' in name:
-            entity.set_pose(sapien.Pose(p=[0, 0, -100]))
-            # Also try to hide render components
-            for comp in entity.components:
-                if hasattr(comp, 'set_visibility') or 'Render' in type(comp).__name__:
-                    try:
-                        comp.set_visibility(0.0)
-                    except:
-                        pass
+    # Keep table and floor visible — object sits naturally on table
+    # We'll extract the object by tight bounding box later
 
     # Place target object at origin, floating (no table underneath)
     builder = get_actor_builder(scene, id=f"ycb:{obj_id}")
@@ -85,8 +74,11 @@ def capture_single_object(obj_id: str, output_dir: Path, shader: str = "rt"):
         z_offset = 0.02
         obj_height = 0.05
     obj.set_pose(sapien.Pose(p=[0, 0, z_offset], q=[1, 0, 0, 0]))
-    # Make object kinematic so it doesn't fall (no table to land on)
     obj_center_z = z_offset + obj_height * 0.5
+
+    # Settle physics (object lands on table)
+    for _ in range(10):
+        env.step(env.action_space.sample() * 0)
 
     # Camera orbit — same radius as environment for consistent SH
     sub_scene = scene.sub_scenes[0]

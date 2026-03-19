@@ -94,9 +94,32 @@ class ManiSkillArmRenderer:
             rp = pose.raw_pose.squeeze().cpu().numpy()
             self.cam.entity.set_pose(sapien.Pose(p=rp[:3], q=rp[3:]))
 
-        # The base_camera has its own resolution (128x128) — we'll resize output
-        self._cam_w = self.cam.width
-        self._cam_h = self.cam.height
+        # Store exact camera parameters for gsplat alignment
+        self._cam_w = self.cam.width    # 128
+        self._cam_h = self.cam.height   # 128
+        self.intrinsic_matrix = self.cam.get_intrinsic_matrix()  # (3, 3)
+
+        # Compute W2C matrix matching COLMAP/GG convention for gsplat
+        # GG/COLMAP convention: R_colmap = R_opencv.T, t = -R_colmap @ eye
+        # OpenCV: z=forward (toward target), y=down, x=right
+        forward = camera_target - camera_eye
+        forward = forward / np.linalg.norm(forward)
+        up_world = np.array([0., 0., 1.])
+        right = np.cross(forward, up_world)
+        nr = np.linalg.norm(right)
+        if nr < 1e-6:
+            right = np.cross(forward, np.array([0., 1., 0.]))
+            nr = np.linalg.norm(right)
+        right = right / nr
+        down = np.cross(forward, right)
+
+        R_opencv = np.stack([right, down, forward], axis=0)  # (3,3)
+        R_colmap = R_opencv.T  # GG/COLMAP stores transposed
+        t_colmap = -R_colmap @ camera_eye
+
+        self.extrinsic_matrix = np.eye(4)
+        self.extrinsic_matrix[:3, :3] = R_colmap
+        self.extrinsic_matrix[:3, 3] = t_colmap
 
         # Step once to settle
         self.env.step(np.zeros(7))
@@ -124,24 +147,27 @@ class ManiSkillArmRenderer:
                 "depth": (H, W) float32 (meters, 0=no hit)
                 "robot_mask": (H, W) bool
         """
-        # Compute delta from current EE pose to target
-        tcp_pose = self.base_env.agent.tcp.pose
-        current_pos = tcp_pose.p[0].cpu().numpy()
-        current_quat = tcp_pose.q[0].cpu().numpy()  # wxyz
+        # Move arm to target EE pose using multiple sub-steps
+        # pd_ee_delta_pose clips actions to [-1, 1], so large moves need
+        # multiple steps to converge
+        grip_action = -1.0 if gripper_state < 0.5 else 1.0
 
-        # Simple approach: apply delta action to move toward target
-        # For a more accurate approach, use mplib IK directly
-        delta_pos = ee_position - current_pos
-        # For orientation, since our trajectories keep constant orientation,
-        # set delta rotation to zero
-        delta_rot = np.zeros(3)
-        grip = -1.0 if gripper_state < 0.5 else 1.0  # ManiSkill: -1=close, 1=open
+        for _ in range(10):  # up to 10 sub-steps to converge
+            tcp_pose = self.base_env.agent.tcp.pose
+            current_pos = tcp_pose.p[0].cpu().numpy()
 
-        action = np.concatenate([delta_pos, delta_rot, [grip]]).astype(np.float32)
-        action = np.clip(action, -1, 1)
+            delta_pos = ee_position - current_pos
+            dist = np.linalg.norm(delta_pos)
+            if dist < 0.005:  # within 5mm — close enough
+                break
 
-        # Step the environment (this applies IK internally)
-        self.env.step(action)
+            delta_rot = np.zeros(3)
+            action = np.concatenate([delta_pos, delta_rot, [grip_action]]).astype(np.float32)
+            action[:3] = np.clip(action[:3], -1, 1)
+            action[3:6] = np.clip(action[3:6], -1, 1)
+            action[6] = grip_action
+
+            self.env.step(action)
 
         # Render
         self.sub_scene.update_render()
@@ -160,16 +186,8 @@ class ManiSkillArmRenderer:
         depth = -pos[:, :, 2]  # Z in camera frame (negative = in front)
         depth[depth <= 0] = np.inf  # no hit = infinity
 
-        # Resize to target resolution if needed
-        from PIL import Image as PILImage
-        if rgb.shape[0] != self.resolution or rgb.shape[1] != self.resolution:
-            rgb = np.array(PILImage.fromarray(rgb).resize(
-                (self.resolution, self.resolution), PILImage.BILINEAR))
-            robot_mask = np.array(PILImage.fromarray(robot_mask.astype(np.uint8) * 255).resize(
-                (self.resolution, self.resolution), PILImage.NEAREST)) > 128
-            depth = np.array(PILImage.fromarray(depth).resize(
-                (self.resolution, self.resolution), PILImage.NEAREST))
-
+        # No resize — render at native camera resolution (128×128)
+        # Compositing and final upscale happen in HybridRenderer
         return {
             "rgb": rgb,
             "depth": depth.astype(np.float32),

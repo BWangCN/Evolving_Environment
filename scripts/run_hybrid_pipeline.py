@@ -14,9 +14,8 @@ from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-PLY = "/home/bwang25/Desktop/Manipulation/Evolving_Environment/data/maniskill_tabletop/output_v3/point_cloud/iteration_7000/point_cloud.ply"
-CLASSIFIER = "/home/bwang25/Desktop/Manipulation/Evolving_Environment/data/maniskill_tabletop/output_v3/point_cloud/iteration_7000/classifier.pth"
-OUTPUT_DIR = Path("/home/bwang25/Desktop/Manipulation/Evolving_Environment/logs/hybrid_render")
+DATA_DIR = Path("/home/bwang25/Desktop/Manipulation/Evolving_Environment/data")
+OUTPUT_DIR = Path("/home/bwang25/Desktop/Manipulation/Evolving_Environment/logs/hybrid_render_v2")
 
 # Camera matching our verified good viewpoint
 CAMERA_EYE = np.array([0.183, 0.326, 0.378])
@@ -31,27 +30,58 @@ def main():
 
     # ── Step 1: Build compositional scene ────────────────────────────
     print("Step 1: Building compositional scene...")
-    from src.pipeline.compositional_scene import CompositionalScene, load_gaussian_cluster_from_ply
+    from src.pipeline.compositional_scene import CompositionalScene, load_gaussian_cluster_from_ply, GaussianCluster
     from src.pipeline.gaussian_transform import compute_grasp_offset
 
-    # Find which object IDs are graspable tabletop objects
-    # From our earlier analysis: IDs 1-10 are small objects, 16=table, 17=floor
-    # Let's use object ID 8 (one of the objects on the table)
-    TARGET_OBJ_ID = 8
+    # Load empty table environment
+    env_cluster = load_gaussian_cluster_from_ply(
+        str(DATA_DIR / "empty_table/output/point_cloud/iteration_7000/point_cloud.ply"),
+        max_points=999999999,
+    )
+    scene = CompositionalScene(env_cluster)
 
-    scene = CompositionalScene.from_ply(PLY, CLASSIFIER, exclude_object_ids=[TARGET_OBJ_ID])
-    obj_cluster = load_gaussian_cluster_from_ply(PLY, CLASSIFIER, object_id=TARGET_OBJ_ID, threshold=0.3)
-    scene.add_object("target", obj_cluster)
+    # Object specs: bbox sizes and desired placements
+    obj_specs = {
+        "005_tomato_soup_can": {"bbox": (0.069, 0.069, 0.103), "place": [0.0, 0.0, 0.05]},
+        "025_mug":             {"bbox": (0.107, 0.095, 0.081), "place": [-0.10, 0.08, 0.04]},
+        "024_bowl":            {"bbox": (0.162, 0.162, 0.055), "place": [0.10, -0.08, 0.028]},
+        "011_banana":          {"bbox": (0.070, 0.199, 0.038), "place": [-0.10, -0.08, 0.019]},
+        "013_apple":           {"bbox": (0.076, 0.076, 0.072), "place": [0.12, 0.06, 0.035]},
+    }
+
+    # Pick target object (soup can for this demo)
+    TARGET_OBJ = "005_tomato_soup_can"
+
+    for obj_id, spec in obj_specs.items():
+        ply_path = DATA_DIR / f"objects/{obj_id}/output/point_cloud/iteration_7000/point_cloud.ply"
+        if not ply_path.exists():
+            print(f"  {obj_id}: PLY not found, skipping")
+            continue
+        full = load_gaussian_cluster_from_ply(str(ply_path), max_points=999999999)
+        bx, by, bz = spec["bbox"]
+        margin = 1.3
+        mask = (np.abs(full.positions[:, 0]) < bx / 2 * margin) & \
+               (np.abs(full.positions[:, 1]) < by / 2 * margin) & \
+               (full.positions[:, 2] > 0.002) & \
+               (full.positions[:, 2] < bz * margin)
+        obj_cluster = GaussianCluster(
+            positions=full.positions[mask], quaternions=full.quaternions[mask],
+            scales=full.scales[mask], opacities=full.opacities[mask], sh_dc=full.sh_dc[mask],
+        )
+        scene.add_object(obj_id, obj_cluster, position=np.array(spec["place"], dtype=np.float32))
+
     print(scene.summary())
 
     # ── Step 2: Detect grasps on the target object ───────────────────
     print("\nStep 2: Detecting grasps...")
     from src.pipeline.gs_to_grasp import detect_grasps
 
-    obj_pts = obj_cluster.positions
-    # Create fake colors for AnyGrasp (it needs RGB)
+    target_cluster = scene.objects[TARGET_OBJ]
+    # Transform to current world position for grasp detection
+    target_world = scene.get_transformed_object(TARGET_OBJ)
+    obj_pts = target_world.positions
     SH_C0 = 0.28209479177387814
-    obj_colors = np.clip(SH_C0 * obj_cluster.sh_dc + 0.5, 0, 1).astype(np.float32)
+    obj_colors = np.clip(SH_C0 * target_world.sh_dc + 0.5, 0, 1).astype(np.float32)
 
     grasps = detect_grasps(obj_pts, obj_colors, top_k=5, collision_detection=False)
     if not grasps:
@@ -81,8 +111,8 @@ def main():
             release_step = i
     print(f"Grasp at step {grasp_step}, release at step {release_step}")
 
-    # Compute grasp offset
-    obj_centroid = obj_cluster.centroid
+    # Compute grasp offset using world-space object centroid
+    obj_centroid = target_world.centroid
     offset_pos, offset_quat = compute_grasp_offset(
         best_grasp.position, best_grasp.orientation, obj_centroid
     )
@@ -106,8 +136,7 @@ def main():
         arm_renderer=arm_renderer,
         camera_eye=CAMERA_EYE,
         camera_target=CAMERA_TARGET,
-        resolution=RESOLUTION,
-        camera_fovy=75.0,
+        output_resolution=RESOLUTION,
     )
 
     # ── Step 5: Render all frames ────────────────────────────────────
@@ -116,7 +145,7 @@ def main():
         trajectory=traj,
         grasp_step=grasp_step,
         release_step=release_step,
-        target_object="target",
+        target_object=TARGET_OBJ,
         grasp_anchor=obj_centroid,
         grasp_offset_pos=offset_pos,
         grasp_offset_quat=offset_quat,

@@ -50,21 +50,20 @@ class HybridRenderer:
         arm_renderer,  # ManiSkillArmRenderer instance
         camera_eye: np.ndarray,
         camera_target: np.ndarray,
-        resolution: int = 256,
-        camera_fovy: float = 75.0,
+        output_resolution: int = 256,
     ):
         self.scene = scene
         self.arm_renderer = arm_renderer
-        self.resolution = resolution
+        self.output_resolution = output_resolution
 
-        # gsplat camera setup (OpenCV convention)
-        self.viewmat = look_at_opencv(camera_eye, camera_target)
-        fovy = np.radians(camera_fovy)
-        fy = resolution / (2 * np.tan(fovy / 2))
-        fx = fy
-        self.K = np.array([[fx, 0, resolution / 2],
-                           [0, fy, resolution / 2],
-                           [0, 0, 1]])
+        # Use the EXACT same camera from ManiSkill — intrinsics AND extrinsics
+        # This ensures pixel-perfect alignment between arm and scene
+        self.render_w = arm_renderer._cam_w  # 128
+        self.render_h = arm_renderer._cam_h  # 128
+        self.K = arm_renderer.intrinsic_matrix.copy()  # fx=fy=64, cx=cy=64
+
+        # Use ManiSkill's actual W2C matrix — no convention guessing
+        self.viewmat = arm_renderer.extrinsic_matrix.copy()
 
     def render_gsplat(self) -> tuple[np.ndarray, np.ndarray]:
         """Render the 3DGS scene (environment + objects) via gsplat.
@@ -76,7 +75,8 @@ class HybridRenderer:
         from gsplat import rasterization
 
         means, colors, opacities, scales, quats = self.scene.get_render_tensors("cuda")
-        W = H = self.resolution
+        W = self.render_w
+        H = self.render_h
 
         vm = torch.tensor(self.viewmat, dtype=torch.float32, device="cuda").unsqueeze(0)
         Kt = torch.tensor(self.K, dtype=torch.float32, device="cuda").unsqueeze(0)
@@ -122,11 +122,17 @@ class HybridRenderer:
         # 2. Render 3DGS scene + objects via gsplat
         scene_rgb, scene_depth = self.render_gsplat()
 
-        # 3. Depth compositing
+        # 3. Depth compositing (at render resolution, e.g. 128×128)
         composited = self.composite(
             arm_rgb, arm_depth, arm_mask,
             scene_rgb, scene_depth,
         )
+
+        # 4. Upscale to output resolution
+        if composited.shape[0] != self.output_resolution:
+            from PIL import Image as PILImage
+            composited = np.array(PILImage.fromarray(composited).resize(
+                (self.output_resolution, self.output_resolution), PILImage.LANCZOS))
 
         return composited
 
