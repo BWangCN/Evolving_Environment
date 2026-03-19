@@ -61,13 +61,23 @@ class ManiSkillArmRenderer:
             num_envs=1,
             sim_backend="cpu",
             render_mode="rgb_array",
-            control_mode="pd_ee_delta_pose",
+            control_mode="pd_joint_pos",
             sensor_configs=dict(shader_pack=shader),
         )
         self.env.reset(seed=42)
         self.base_env = self.env.unwrapped
         self.scene = self.base_env.scene
         self.sub_scene = self.scene.sub_scenes[0]
+
+        # Setup mplib motion planner for IK
+        from mani_skill.examples.motionplanning.panda.motionplanner import (
+            PandaArmMotionPlanningSolver,
+        )
+        self.motion_planner = PandaArmMotionPlanningSolver(
+            self.env, debug=False, vis=False,
+            base_pose=self.base_env.agent.robot.pose,
+            print_env_info=False,
+        )
 
         # Hide non-robot objects (cube, goal)
         if hasattr(self.base_env, "cube"):
@@ -122,7 +132,8 @@ class ManiSkillArmRenderer:
         self.extrinsic_matrix[:3, 3] = t_colmap
 
         # Step once to settle
-        self.env.step(np.zeros(7))
+        # pd_joint_pos: 8-dim action (7 joints + gripper)
+        self.env.step(np.zeros(8))
 
     def render_at_ee_pose(
         self,
@@ -147,26 +158,39 @@ class ManiSkillArmRenderer:
                 "depth": (H, W) float32 (meters, 0=no hit)
                 "robot_mask": (H, W) bool
         """
-        # Move arm to target EE pose using multiple sub-steps
-        # pd_ee_delta_pose clips actions to [-1, 1], so large moves need
-        # multiple steps to converge
-        grip_action = -1.0 if gripper_state < 0.5 else 1.0
+        import sapien as sapien_mod
 
-        for _ in range(10):  # up to 10 sub-steps to converge
-            tcp_pose = self.base_env.agent.tcp.pose
-            current_pos = tcp_pose.p[0].cpu().numpy()
+        # Use mplib IK to compute joint positions for the target EE pose
+        target_pose = np.concatenate([ee_position, ee_orientation_wxyz])
+        qpos_current = self.base_env.agent.robot.get_qpos().cpu().numpy()[0]
 
-            delta_pos = ee_position - current_pos
-            dist = np.linalg.norm(delta_pos)
-            if dist < 0.005:  # within 5mm — close enough
-                break
+        # Try screw motion first (smoother), fall back to RRT
+        result = self.motion_planner.planner.plan_screw(
+            target_pose, qpos_current, time_step=0.05,
+        )
+        if result["status"] != "Success":
+            result = self.motion_planner.planner.plan_qpos_to_pose(
+                target_pose, qpos_current, time_step=0.05, wrt_world=True,
+            )
 
-            delta_rot = np.zeros(3)
-            action = np.concatenate([delta_pos, delta_rot, [grip_action]]).astype(np.float32)
-            action[:3] = np.clip(action[:3], -1, 1)
-            action[3:6] = np.clip(action[3:6], -1, 1)
-            action[6] = grip_action
-
+        if result["status"] == "Success":
+            # Execute the planned path to reach the target
+            final_qpos = result["position"][-1]
+            # Set gripper: open = 0.04, closed = 0.0
+            grip_val = 0.04 if gripper_state > 0.5 else 0.0
+            # pd_joint_pos expects 8 dims: 7 joints + gripper (controls both fingers)
+            action = np.zeros(8, dtype=np.float32)
+            action[:7] = final_qpos[:7]
+            action[7] = grip_val
+            # Step multiple times to let the PD controller converge
+            for _ in range(5):
+                self.env.step(action)
+        else:
+            # IK failed — just hold current position
+            grip_val = 0.04 if gripper_state > 0.5 else 0.0
+            action = np.zeros(8, dtype=np.float32)
+            action[:7] = qpos_current[:7]
+            action[7] = grip_val
             self.env.step(action)
 
         # Render

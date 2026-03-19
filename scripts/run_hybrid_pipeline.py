@@ -94,8 +94,19 @@ def main():
     print("\nStep 3: Generating trajectory...")
     from src.trajectory import TrajectoryGenerator, trajectory_to_actions
 
-    place_target = np.array([0.15, -0.10, 0.025], dtype=np.float32)
-    gen = TrajectoryGenerator()
+    # Use ManiSkill robot's actual home position and orientation
+    maniskill_home_pos = np.array([0.012, 0.014, 0.184], dtype=np.float32)
+    maniskill_home_ori = np.array([0.0, 1.0, 0.0, 0.0], dtype=np.float32)  # wxyz, EE pointing down
+
+    # Override the grasp orientation to match ManiSkill's EE convention
+    best_grasp.orientation = maniskill_home_ori.copy()
+
+    place_target = np.array([0.05, -0.08, 0.025], dtype=np.float32)
+    gen = TrajectoryGenerator(
+        home_position=maniskill_home_pos,
+        home_orientation=maniskill_home_ori,
+        steps_per_segment=10,
+    )
     traj = gen.generate_pick_place(best_grasp, place_target)
     gen.smooth_corners(traj, radius=3)
     actions = trajectory_to_actions(traj)
