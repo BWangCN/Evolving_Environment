@@ -1,6 +1,6 @@
 # 3DGS-EvoHome Technical Decisions
 
-> **Last Updated:** March 19, 2026 (pipeline architecture revision: 3DGS as scene digitizer, sim handles all rendering)
+> **Last Updated:** March 19, 2026 (MAJOR: drop 3DGS as core tech → per-object scanning + VGGT, method-agnostic framework)
 > **Synced with:** [3DGS_Timeline.md](3DGS_Timeline.md) | [progress.md](progress.md) | [pipeline_gap_analysis.md](pipeline_gap_analysis.md)
 
 ---
@@ -24,18 +24,45 @@
 - **Ablation plan:** Compare insulation vs isolation vs no-isolation as ablation experiment
 - **Date:** Mar 16, 2026
 
-### D3. 3DGS Role — Scene Digitizer (REVISED Mar 19)
-- **Choice:** Gaussian Grouping as **scene digitizer** (reconstruct + segment → export per-object mesh → import into sim). **NOT used for rendering.**
-- **Gaussian Grouping handles:** COLMAP, 3DGS reconstruction, SAM segmentation → per-object Gaussian clusters
-- **Gaussian → Mesh bridge:** SuGaR (Poisson reconstruction, preferred) or TSDF fusion (Open3D) → textured .obj per object
-- **ManiSkill handles:** ALL rendering (robot arm + objects + scene), physics, trajectory execution, evaluation
-- **gsplat role reduced:** No longer needed for training data rendering. May still be useful for depth map generation during mesh extraction (TSDF path).
-- **What's removed:** Hybrid depth compositing (ManiSkill robot + gsplat scene), SE(3) Gaussian transforms for object relocation, gsplat batch rendering pipeline — all replaced by sim-native rendering.
-- **Why this revision:** Robot arm viewpoint (third-person + wrist camera) requires sim rendering. Running hybrid compositing is fragile and complex. Sim handles rendering + physics natively.
-- **Why keep 3DGS at all (vs single-image Hunyuan3D):** Multi-view 3DGS gives metric scale (from COLMAP), higher geometric fidelity, and scene-level reconstruction (all objects at once). Hunyuan3D has scale ambiguity requiring RGB-D + ICP alignment (Li et al. main failure mode).
-- **3DGS Environment Bank:** Still valid — store 3DGS reconstructions of all environments, export meshes on-demand for sim-based generative replay.
-- **Competitor context:** Li et al. (arXiv 2603.13825) uses Hunyuan3D single-image → mesh → Isaac Sim, achieving only 12.5-62.5% success. Our multi-view 3DGS → mesh path is more reliable.
-- **Date:** Mar 16 (original), Mar 17 (verified), **Mar 19 (revised: digitizer-only role)**
+### D3. 3D Reconstruction — Per-Object Scanning, Method-Agnostic (REVISED Mar 19, twice)
+
+> **MAJOR PIVOT:** 3DGS is no longer a core technology. The framework is reconstruction-method-agnostic. 3DGS is one option among several (VGGT, Hunyuan3D, etc.) and may appear as an ablation, not as the headline contribution.
+
+- **Choice:** Per-object scanning (not scene-level). Each new object is photographed individually (e.g., on green screen or turntable) → reconstructed to mesh → imported into sim.
+- **Why per-object instead of scene-level:**
+  - Eliminates the need for segmentation entirely (no Gaussian Grouping, no SAM)
+  - Avoids green screen / table bleeding artifacts during mesh extraction
+  - More realistic user interaction — nobody re-scans their whole kitchen for one new mug
+  - Scene layout captured separately (one overhead photo + object detection, or RGB-D frame)
+- **Recommended reconstruction method: VGGT** (Facebook Research, arXiv 2503.11651)
+  - Feed-forward transformer: 5-10 images → point cloud + depth + camera params in <1 second
+  - Point cloud → Poisson/Ball Pivoting → mesh (~1-2 minutes total per object)
+  - Open source, commercial license available, 2-21 GB VRAM
+  - Used by SyncTwin (arXiv 2601.09920) for robotic digital twin construction
+- **Alternative reconstruction methods (for ablation):**
+  - 3DGS (Gaussian Grouping or vanilla): higher fidelity but 30-60 images, 15-30 min
+  - Hunyuan3D 2.0: single image, but scale ambiguity (needs RGB-D + ICP)
+  - 2DGS: best mesh quality, but requires retraining
+- **What's removed from pipeline:**
+  - ~~Gaussian Grouping~~ → not needed (no scene-level segmentation)
+  - ~~SAM / DEVA~~ → not needed
+  - ~~gsplat~~ → not needed (sim handles rendering)
+  - ~~SuGaR~~ → not needed (VGGT outputs point cloud directly)
+  - ~~COLMAP~~ → VGGT replaces it (or use known camera poses from turntable)
+  - ~~Hybrid depth compositing~~ → sim handles everything
+  - ~~3DGS inpainting (LaMa)~~ → not needed (sim composes from individual objects)
+- **What remains from 3DGS era:**
+  - Object Library concept (store mesh + appearance per object, reuse across environments)
+  - The "scan → reconstruct → sim" paradigm (but with lighter tools)
+- **Impact on paper:**
+  - Title must change: remove "3D Gaussian Splatting", focus on "digital twin" / "scene digitization" / "evolving environments"
+  - Framework is method-agnostic: VGGT vs 3DGS vs Hunyuan3D as ablation
+  - Stronger paper: not tied to one 3D reconstruction method
+- **Competitor context:**
+  - SyncTwin (arXiv 2601.09920): VGGT → mesh → Isaac Sim, 71-93% success, planning-only, no CL
+  - Li et al. (arXiv 2603.13825): Hunyuan3D → mesh → Isaac Sim, 12-62% success, planning-only, no CL
+  - Both validate "digital twin → sim" approach but neither does learning or CL
+- **Date:** Mar 16 (3DGS core), Mar 17 (3DGS verified), Mar 19 AM (3DGS as digitizer), **Mar 19 PM (MAJOR: drop 3DGS as core, per-object VGGT, method-agnostic)**
 
 ### D4. Development Environment (UPDATED Mar 17)
 - **Windows 4080 (local):** Documentation, code modules (no GPU deps), quick iteration
@@ -93,44 +120,52 @@
 - **Home pose:** Joint angles [0, -π/4, 0, -3π/4, 0, π/2, π/4], EE ~40cm above workspace
 - **Date:** Mar 16, 2026
 
-### D10. Pipeline Architecture — Sim-Centric with 3DGS Digitization (NEW, Mar 19)
-- **Choice:** 3DGS reconstructs and segments the real scene → per-object meshes exported → imported into ManiSkill → sim handles ALL rendering, physics, and trajectory execution
+### D10. Pipeline Architecture — Per-Object Digital Twin + Sim (REVISED Mar 19 PM)
+- **Choice:** Per-object 3D scanning → mesh → Object Library → compose in ManiSkill → sim handles ALL rendering, physics, trajectory execution
 - **Full pipeline:**
   ```
-  Real scene photos (30-60) → Gaussian Grouping (reconstruct + segment)
-      → per-object Gaussians → SuGaR/TSDF → textured mesh (.obj)
-      → import into ManiSkill (objects + table env)
-      → AnyGrasp grasp planning (on mesh or point cloud)
-      → motion plan → sim execute → record (I, a, l)
-      → π0.5 LoRA fine-tune
+  Offline (each new object, once):
+      Object on green screen/turntable → 5-10 photos → VGGT → point cloud → mesh
+      → store in Object Library (mesh + metadata)
+
+  Online (when environment changes):
+      Overhead photo of table → detect which objects, where →
+      retrieve meshes from Object Library →
+      place in ManiSkill at detected poses →
+      AnyGrasp → motion plan → sim execute → record (I, a, l) →
+      π0.5 LoRA fine-tune (per-env adapter)
+
+  Continual (across environments):
+      Object Library persists across E1→E2→...→En
+      Replay: reload old environment's objects + layout in sim → regenerate data
   ```
-- **Key advantages over previous hybrid approach:**
-  - No hybrid depth compositing (was the biggest engineering risk)
-  - Robot arm rendered natively by sim (correct occlusion, wrist camera view)
-  - Physics validation for free (collision, gravity, grasp stability)
-  - Simpler codebase, fewer failure modes
-- **Key advantages over Li et al. (Hunyuan3D → sim):**
-  - Multi-view 3DGS has metric scale (no RGB-D + ICP needed)
-  - Scene-level reconstruction (all objects at once, not one-by-one)
-  - Higher geometric fidelity (multi-view constraint vs single-image prior)
-- **3DGS still contributes to paper novelty:**
-  - "Real-world scene digitizer" — scan home → editable digital twin
-  - 3DGS Environment Bank for generative replay
-  - Automatic per-object segmentation + mesh extraction
+- **Key advantages over 3DGS-centric pipeline:**
+  - No segmentation needed (per-object scan = no table/background contamination)
+  - No COLMAP, no Gaussian Grouping, no gsplat, no SuGaR, no SAM
+  - 2 minutes per object (VGGT) vs 45 minutes (3DGS pipeline)
+  - Reconstruction method is pluggable (VGGT / 3DGS / Hunyuan3D)
+- **Key advantages over Li et al. / SyncTwin:**
+  - They do planning (zero-shot, 12-93% success); we do learning (VLA adapts over time)
+  - They need RGB-D sensor for pose alignment; our turntable setup needs only RGB
+  - We address continual adaptation; they don't
+- **Object Library replaces 3DGS Environment Bank:**
+  - Store: per-object mesh + texture + metadata (size, category, affordances)
+  - Store: per-environment layout snapshot (object IDs + poses)
+  - Replay: reload any historical environment in sim from stored objects + layout
+  - Simpler than storing 3DGS scenes, more flexible (remix objects across environments)
+- **Paper contributions (updated):**
+  1. Problem definition: evolving environment CL for VLAs (+ EvoHome-Bench)
+  2. Digital twin framework: scan → reconstruct → sim → synthesize data (method-agnostic)
+  3. Decoupled CL: per-env LoRA + TFA + CARS + Object Library replay
+  4. Ablation: VGGT vs 3DGS vs Hunyuan3D as reconstruction backends
 - **Date:** Mar 19, 2026
 
 ---
 
 ## Pending Decisions
 
-### P2. Inpainting Strategy Details — LIKELY UNNECESSARY (revised Mar 19)
-- **Original:** LaMa inpainting for 3DGS hole-filling after object removal
-- **Revised:** With sim-centric pipeline, inpainting is likely unnecessary — sim scenes are composed from individual meshes, no holes to fill
-- **May still be useful for:** 3DGS Environment Bank replay (re-rendering stored scenes with objects removed/swapped)
-- **Baseline:** Gaussian Grouping's LaMa approach — **verified on bear scene**. 2D LaMa pseudo labels + 10K fine-tune → clean inpainting, no visible artifacts. Loss: 0.27 → 0.10.
-- **Note:** Densification during fine-tuning is memory-intensive (27 GB VRAM). Use `PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
-- **Alternatives:** GScream (depth-guided), InFusion (diffusion prior), 3DGS-CD (duplicate + optimize)
-- **Target:** Week 2-3 (baseline locked, alternatives only if quality insufficient on tabletop scenes)
+### ~~P2. Inpainting Strategy~~ — REMOVED (Mar 19)
+- **Reason:** Per-object scanning + sim composition eliminates all inpainting needs. No holes to fill.
 
 ### P3. Language Instruction Generation
 - **Candidates:** LLM template expansion, manual template library
@@ -153,10 +188,13 @@
 - **Open:** In scope or simulation only? CoRL strongly prefers real robot.
 - **Target:** Week 4-5 (decide based on progress)
 
-### P9. Gaussian → Mesh Method (NEW, Mar 19)
+### ~~P9. Gaussian → Mesh Method~~ — SUPERSEDED (Mar 19)
+- **Reason:** With per-object VGGT pipeline, Gaussian → Mesh conversion is no longer needed. VGGT outputs point cloud directly → Poisson mesh. 3DGS only appears as ablation comparison.
+
+### P10. Scene Layout Detection (NEW, Mar 19)
+- **Problem:** Per-object meshes are in Object Library, but how to detect their current poses in the real environment?
 - **Candidates:**
-  - SuGaR (Poisson reconstruction, directly eats GG checkpoint, few minutes, recommended)
-  - TSDF fusion (gsplat depth renders → Open3D integration → marching cubes, ~50 lines code)
-  - 2DGS (highest quality mesh but requires retraining from scratch)
-- **Evaluation criteria:** Mesh quality sufficient for grasp planning in sim, watertight for physics
-- **Target:** Week 2 (test SuGaR on existing bear scene GG output)
+  - Overhead RGB photo → VLM/object detection → estimate positions
+  - RGB-D frame → point cloud segmentation + colored-ICP (SyncTwin approach)
+  - Manual specification (simplest, for sim experiments)
+- **Target:** Week 3-4
