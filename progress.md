@@ -810,6 +810,334 @@ Resolved 6 design bottlenecks for moving Gaussian clusters along robot trajector
 
 ---
 
+## Mar 19 — SuGaR Mesh Extraction + Sim Pipeline
+
+### SuGaR Mesh Extraction — WORKING (with caveats)
+
+- **SuGaR installed** at `/home/bwang25/Desktop/Manipulation/SuGaR/`
+- pytorch3d 0.7.9 built for Blackwell SM 120
+- Rasterizer conflict resolved: GG needs `sh_objs` support, SuGaR doesn't. GG's rasterizer built in-place at `gaussian-grouping/submodules/diff-gaussian-rasterization/`. Use `PYTHONPATH` override when running GG.
+- `np.byte` → `np.uint8` fix in `SuGaR/sugar_scene/cameras.py:107`
+
+### Object Capture (ManiSkill → 3DGS)
+
+- **Script:** `scripts/capture_individual_objects.py`
+- 120 views per object, Fibonacci sphere coverage (-80° to +80° elevation)
+- Objects: `005_tomato_soup_can`, `025_mug`, `024_bowl`, `011_banana`, `013_apple`
+- **Key fix:** Remove `RenderBodyComponent` from `scene-0_ground` and `scene-0_table-workspace` entities — moving them to z=-100 is NOT enough, they still render
+- White background via alpha compositing (SAPIEN RGBA → alpha channel → white bg)
+- Object masks from alpha channel saved to `object_mask/`
+
+### 3DGS → Mesh Pipeline Issues & Solutions
+
+| Issue | Root Cause | Fix |
+|-------|-----------|-----|
+| Thin shell meshes | Only top-hemisphere views (20°-70° elev) | Full sphere capture (Fibonacci spiral) |
+| Green noise in mesh | 3DGS reconstructs green background | White background + `--white_background` flag |
+| Gray ground in images | SAPIEN ground plane renders with alpha=1 | Remove `RenderBodyComponent` from ground entity |
+| SuGaR `np.byte` crash | NumPy version incompatibility | Change to `np.uint8` |
+| GG `sh_objs` error | Wrong rasterizer loaded (SuGaR's vs GG's) | Build GG's rasterizer, use PYTHONPATH override |
+| GG `config.json` not found | CWD-relative path | Pass `--config_file` explicitly |
+
+### Sim Pipeline — WORKING (IK-based)
+
+- **Script:** `scripts/run_sim_pipeline.py`
+- Loads SuGaR OBJ meshes into ManiSkill as dynamic actors
+- AnyGrasp detects grasps on mesh point clouds
+- IK motion planning via mplib (all waypoints reachable)
+- 11-step pick-place: start → transit → pre_grasp → approach → grasp → lift → transit_place → pre_place → place_descend → release → retreat
+- Control: `pd_joint_pos` with motion planner (NOT `pd_ee_delta_pose` — action scaling mismatch)
+
+### Visualization Paths
+
+| What | Path |
+|------|------|
+| **Object input images** | `data/objects/<id>/images/` (120 PNG each) |
+| **Object masks** | `data/objects/<id>/object_mask/` (120 PNG each) |
+| **3DGS checkpoints** | `data/objects/<id>/output/point_cloud/iteration_7000/point_cloud.ply` |
+| **3DGS renders** | `data/objects/<id>/output/train/ours_7000/renders/` |
+| **3DGS GT vs Render** | `data/objects/<id>/output/train/ours_7000/concat/` |
+| **SuGaR coarse models** | `SuGaR/output/coarse/<id>/sugarcoarse_.../15000.pt` |
+| **SuGaR raw meshes** | `SuGaR/output/coarse_mesh/<id>/sugarmesh_...ply` |
+| **Cropped OBJ meshes** | `data/objects/<id>/mesh/<id>.obj` |
+| **Sim initial scene** | `logs/sim_pipeline/initial_scene.png` |
+| **Sim trajectory video** | `logs/sim_pipeline/traj_0.mp4`, `traj_1.mp4`, `traj_2.mp4` |
+| **Sim trajectory frames** | `logs/sim_pipeline/traj_0_frames/0000-0010.png` |
+| **Sim trajectory overview** | `logs/sim_pipeline/trajectory_overview.png` |
+| **3DGS quality check** | `/tmp/3dgs_quality_check.png` (input vs 3DGS render comparison) |
+| **Mesh comparison plot** | `/tmp/sugar_all_meshes.png` or `/tmp/sugar_filtered_meshes.png` |
+
+### VGGT Pipeline — WORKING (Mar 19, replaces 3DGS+SuGaR)
+
+**Why pivot:** SuGaR mesh extraction from 3DGS failed repeatedly — background Gaussians produced noisy mesh fragments. VGGT (feed-forward transformer, CVPR 2025 Best Paper) reconstructs directly from images in seconds.
+
+**Pipeline:** ManiSkill RGB captures → VGGT point cloud → mask filter → scale calibrate → Poisson mesh → ManiSkill sim
+
+**Script:** `scripts/run_vggt_pipeline.py`
+
+**Results (all 5 objects):**
+
+| Object | Verts | Tris | Size (mm) | Expected (mm) |
+|--------|-------|------|-----------|---------------|
+| Tomato Can | 321,309 | 638,942 | 60x75x101 | 69x69x103 |
+| Mug | 520,715 | 1,032,662 | 85x98x101 | 107x95x81 |
+| Bowl | 351,687 | 700,231 | 162x159x105 | 162x162x55 |
+| Banana | 92,012 | 182,988 | 198x81x63 | 70x199x38 |
+| Apple | 349,445 | 695,588 | 63x71x75 | 76x76x72 |
+
+**Sim pipeline:** All 3 trajectories executed successfully, all IK solutions OK.
+
+**VGGT Visualization Paths:**
+
+| What | Path |
+|------|------|
+| **All meshes overview** | `logs/vggt_pipeline/all_meshes_vggt.png` |
+| **Sim initial scene** | `logs/vggt_pipeline/initial_scene.png` |
+| **Trajectory overview** | `logs/vggt_pipeline/trajectory_overview.png` |
+| **Trajectory videos** | `logs/vggt_pipeline/traj_0.mp4`, `traj_1.mp4`, `traj_2.mp4` |
+| **Trajectory frames** | `logs/vggt_pipeline/traj_*_frames/` |
+| **Object meshes** | `data/objects/<id>/mesh/<id>.obj` |
+
+**Key improvements over 3DGS+SuGaR:**
+- Objects are recognizable solid shapes (can, mug, bowl, banana, apple) — not splattered fragments
+- Reconstruction takes seconds per object (vs 20+ min for 3DGS+SuGaR)
+- No background noise problem (mask-filtered point cloud + Poisson mesh)
+- Scale calibrated to real-world dimensions using known YCB bbox sizes
+
+**Remaining issues to address:**
+- Mesh visualization in matplotlib is sparse (dense meshes render poorly); actual OBJ files are high quality
+- Bowl height is 2x expected (105mm vs 55mm) — VGGT scale estimation less accurate for flat objects
+- Object colors in ManiSkill use material override (not VGGT vertex colors) — could improve with texture mapping
+- Poisson mesh may have extra surface where point cloud has gaps — could improve with alpha shape or ball pivoting
+
+### 3DGS → SuGaR Refined Textured Mesh — WORKING (Mar 20)
+
+**Full SuGaR pipeline verified on tomato_soup_can:**
+1. 3DGS training (white bg, 120 views, 7K iter) → 116K Gaussians ✓
+2. SuGaR coarse (15K iter) → coarse mesh ✓
+3. SuGaR extract mesh → mesh with correct size (67×66×104mm) ✓
+4. SuGaR refine (15K iter) → refined Gaussians bound to mesh ✓
+5. SuGaR extract textured mesh → .obj + .mtl + .png texture atlas ✓
+6. Crop to object region → 50K verts, UV preserved ✓
+7. Separate collision hull (watertight convex, 1815v) ✓
+8. Import to ManiSkill → sits on table correctly, texture renders ✓
+
+**Key fixes that made it work:**
+- White background images + `--white_background` flag (no background Gaussians)
+- Remove ground plane RenderBodyComponent (not just move to z=-100)
+- Separate visual mesh (detailed, textured) and collision mesh (watertight convex hull)
+- Crop refined mesh to object bbox before import (removes background geometry)
+- Fix MTL file to reference texture PNG (`map_Kd`)
+
+**Visualization paths:**
+
+| What | Path |
+|------|------|
+| Input images | `logs/debug_3dgs/step1_input_images.png` |
+| Object masks | `logs/debug_3dgs/step1_masks.png` |
+| GT vs 3DGS renders | `logs/debug_3dgs/step3_gt_vs_render.png` |
+| GT\|Render\|Seg | `logs/debug_3dgs/step3_concat.png` |
+| Gaussian cloud | `logs/debug_3dgs/step4_gaussian_cloud.png` |
+| All-angle renders | `logs/debug_3dgs/step4_all_angle_renders.png` |
+| Mesh method comparison | `logs/debug_3dgs/mesh_method_comparison.png` |
+| Flat-color mesh in sim | `logs/debug_3dgs/mesh_in_sim_test.png` |
+| Textured mesh in sim | `logs/debug_3dgs/textured_mesh_cropped_in_sim.png` |
+| Textured mesh files | `data/objects/005_tomato_soup_can/mesh/005_tomato_soup_can_textured_cropped.obj` + `.mtl` + `.png` |
+| Collision mesh | `data/objects/005_tomato_soup_can/mesh/005_tomato_soup_can_collision.obj` |
+
+**TBD:**
+- [ ] Texture appears dark in ManiSkill default shader — try `rt` shader or adjust ambient light
+- [x] Run full SuGaR refined pipeline on all 5 objects
+- [ ] Integrate textured meshes into full sim pick-place pipeline
+
+### Mar 20 (Thu) — Debugging Bowl/Mug + Functional Semantics Insight
+
+#### Debug: Bowl & Mug Reconstruction Quality
+
+Investigated why 024_bowl and 025_mug reconstructions are "very bad."
+
+**Step 1: Input images are clean.** White backgrounds, good 120-view coverage, no green screen artifacts.
+
+**Step 2: 3DGS reconstruction is fine.** GT vs render comparison shows near-perfect quality for all objects including bowl and mug. The Gaussian clouds have correct shapes (bowl concavity, mug handle visible). 3DGS handles concave objects perfectly because it's volumetric (splatting, not meshing).
+
+**Step 3: SuGaR mesh extraction is the bottleneck.** Marching cubes level-set extraction fails on concave geometry:
+- SuGaR meshes the entire scene (700K+ faces) including background Gaussians spread over 600-900mm
+- Crop to object region captures only 2-3% of faces
+- For concave objects, the cropped faces are **fragmented into many disconnected components**
+- "Keep largest component" throws away most of the object: bowl keeps 13K/100K faces, mug 13K/100K
+- Tomato can (convex) works because the cropped faces form one clean connected surface
+
+| Object | SuGaR raw faces | In crop | After largest component | Quality |
+|--------|----------------|---------|------------------------|---------|
+| Tomato can | 326K | 2,888 | 101K | Good |
+| Bowl | 736K | 21,362 | 13,586 | Bad (fragmented) |
+| Mug | 766K | 17,651 | 13,246 | Bad (fragmented) |
+
+**Decision: Not worth fixing.** SuGaR's concavity limitation is a known engineering issue, not a novel research problem. Not a paper contribution.
+
+#### Gripper Width Analysis
+
+Panda gripper max opening = 80mm. Object graspability:
+- Tomato can (66mm) — fits ✓
+- Banana (38mm min) — easy ✓
+- Apple (73mm) — borderline (3.5mm clearance/side)
+- Bowl (162mm) — impossible
+- Mug (82mm + handle) — impossible
+
+Checked ManiSkill alternatives: only XArm6 + Robotiq 2F-85 (85mm) available — only 5mm wider, not worth switching (requires new motion planner + full pipeline rewrite).
+
+**Decision: Object selection problem, not gripper problem.** Select convex objects < 70mm for grasping. Use concave objects as semantic targets (containers).
+
+#### Key Insight: Functional Semantic Digital Twins
+
+**Thesis:** Digital twins need geometry + appearance + **functional semantics**.
+
+Prior work (SyncTwist etc.) generates pick-and-place trajectories that ignore object identity — every object is just a rigid body to relocate. No semantic understanding.
+
+**Our approach:** Use object functional roles (container, food, tool, stackable) to generate semantically meaningful long-horizon task sequences:
+- "Pick up the apple and place it in the bowl"
+- "Stack the cans"
+- "Clear the table: fruits into bowl first, then move bowl"
+
+**Implementation plan (proof of concept):**
+1. Hard-coded template system for task planning (maps object roles + layout → task sequence)
+2. Hard-coded trajectory generator for semantic primitives (pick, place-in, stack, etc.)
+3. Demonstrates that functional semantics enable rich trajectory synthesis beyond trivial pick-place
+4. Concave objects (bowl, plate) become *destinations*, not grasp targets — sidesteps both gripper and SuGaR issues
+
+**Recommended object set:**
+- Graspable (convex, <70mm): 005_tomato_soup_can, 011_banana, 004_sugar_box, 006_mustard_bottle, 010_potted_meat_can, 014_lemon, 016_pear
+- Semantic targets (containers, use GT mesh): 024_bowl, 029_plate
+- Enables combinatorial task generation from object relationships
+
+---
+
+### Mar 22 (Sat) — Hopper Setup + π0.5 LoRA Finetuning Pipeline Verified + Training Submitted
+
+#### Hopper Cluster Setup (A100)
+
+- [x] Connected to GMU Hopper via VPN (`vpn.gmu.edu`, GENERAL group) + SSH
+- [x] Set up passwordless SSH (`ssh hopper` alias in `~/.ssh/config`)
+- [x] Installed uv + cloned openpi to `~/openpi/`
+- [x] Resolved `rerun-sdk` glibc incompatibility (`uv sync --no-install-package rerun-sdk`)
+- [x] Verified JAX 0.5.3 sees GPU: `CudaDevice(id=0)` on A100 MIG 3g.40gb slice
+- [x] Resolved SSL certificate issue for GCS downloads (`SSL_CERT_FILE` env var with certifi)
+- [x] Downloaded pi0.5 base checkpoint (11.6GB) to `/scratch/bwang25/openpi_cache/`
+- [x] Transferred tokenizer from 5090 to Hopper
+
+#### Dataset Transfer
+
+- [x] Transferred ManiSkill LeRobot dataset (13GB, 8000 eps) from 5090 to `/scratch/bwang25/maniskill_pi05/`
+- [x] Created symlink from `$HF_HOME/lerobot/bwang25/maniskill_pi05` → scratch dataset
+- [x] Verified dataset loads correctly in openpi data pipeline
+
+#### Custom Training Config
+
+- [x] Created `LeRobotManiSkillDataConfig` class in `config.py` — handles flat-key dataset format (image, wrist_image, state, actions → observation/image, observation/wrist_image, observation/state, actions, prompt)
+- [x] Created `pi05_maniskill` config (full finetuning, needs A100 80GB)
+- [x] Created `pi05_maniskill_lora` config (LoRA finetuning, fits 40GB MIG)
+  - Model: `pi05=True, action_horizon=10, gemma_2b_lora + gemma_300m_lora`
+  - LoRA ranks: 16 (VLM), 32 (action expert) — openpi defaults
+  - Batch size: 32 (test) / 64 (production A100 80GB)
+  - LR: 5e-5 cosine decay, 1K warmup
+  - Steps: 20,000
+  - Freeze filter: all base weights frozen, only LoRA params trained
+  - EMA disabled (standard for LoRA)
+
+#### Pipeline Verification
+
+- [x] Computed normalization statistics (mean/std for states and actions, ~1 hour)
+- [x] Full finetuning test on 40GB MIG: **OOM at 53.6GB** — confirms A100 80GB needed for full finetuning
+- [x] LoRA finetuning test on 40GB MIG: **SUCCESS** — model loaded, data flowing, training steps executing
+  - Checkpoint loaded in 5 seconds (12.5GB, 2.5 GiB/s)
+  - Data pipeline verified: 32×224×224×3 images, 32×32 states, 32×200 tokenized prompts
+  - LoRA parameters visible: `lora_a` and `lora_b` in attention (q, k, v, out) and MLP layers
+
+#### Production Training Submitted
+
+- [x] Created SLURM script `slurm_train_pi05_lora.sh` (A100 80GB, 2-day limit, batch_size=64)
+- [x] Submitted job to Hopper `gpuq` partition: `sbatch slurm_train_pi05_lora.sh`
+- [x] Job queued (SLURM job ID 6589595), pending A100 allocation
+- [x] wandb tracking: `beichenwang2000-george-mason-university/openpi`
+- [x] Checkpoints saved to `/scratch/bwang25/checkpoints/pi05_maniskill_lora/pi05_lora_v1/`
+- [x] Estimated training time: ~30 hours
+
+**Key files on Hopper:**
+- Config: `~/openpi/src/openpi/training/config.py` (LeRobotManiSkillDataConfig + pi05_maniskill_lora)
+- SLURM: `~/openpi/slurm_train_pi05_lora.sh`
+- Norm stats: `~/openpi/assets/pi05_maniskill_lora/`
+- Logs: `/scratch/bwang25/logs/pi05-lora-*.out`
+
+### Mar 23 (Sun) — Evaluation + Training Data Quality Analysis
+
+#### Finetuned pi0.5 LoRA Evaluation on ManiSkill (5090)
+
+- [x] Training completed on Hopper A100 40GB (~24 hours, 20K steps, batch_size=32)
+- [x] Downloaded checkpoint (step 19999) + norm stats to 5090
+- [x] Policy server launched, inference loop running on ManiSkill PickCube
+- [x] **Result: 0/5 success** — model outputs saturated actions, no coherent manipulation
+
+#### Root Cause Analysis
+
+- [x] **Camera view mismatch ruled out** — training data and inference both use `env.render()` (same third-person view, verified by visual comparison)
+- [x] **Action space confirmed matching** — both use `pd_ee_delta_pose` [-1, 1] format
+- [x] **Root cause identified: RL demo quality** — RL policy actions are jerky, saturating at ±1.0, with only 17 steps per episode
+  - RL actions: range [-1.0, +1.0], step delta mean abs = 0.1505, episodes = 17 steps avg
+  - Motion planning actions (converted): range [-0.25, +0.40], step delta mean abs = 0.005, episodes = 77 steps avg
+  - RL is **30x less smooth** than motion planning
+  - pi0.5 action chunks (horizon=10) get only 1-2 replanning cycles per 17-step RL episode
+  - LIBERO actions (reference): rotation q01~[-0.12, -0.19], q99~[0.14, 0.31] — much smaller than RL's ±1.0
+  - Quantile normalization on RL data maps [-1, 1] → [-1, 1] (no useful normalization)
+
+#### Decision: Switch to Motion Planning Demos
+
+- [x] **Checked MP demo availability:** PickCube-v1 (1000 eps, 74 steps avg), StackCube-v1 (1000 eps, 107 steps avg). PullCube-v1 and LiftPegUpright-v1 have no MP demos.
+- [x] **ManiSkill replay tool verified:** converts joint position actions → pd_ee_delta_pose (100% success on test batch)
+- [x] Converted actions are smooth: pos deltas ~0.01-0.15m, rot deltas ~0.01-0.12rad (matches LIBERO distribution)
+- [x] Each 77-step MP episode → 68 valid training samples (vs 8 from RL) = **8.5x more data**
+- [x] Step 1 DONE: ManiSkill replay tool converted MP trajectories → pd_ee_delta_pose for PickCube (1000 eps, 78K frames) and StackCube (1000 eps, 108K frames). 100% success.
+- [x] Converted action quality verified: pos deltas ~[-0.2, +0.35], rot deltas ~[-0.08, +0.08] — matches LIBERO distribution
+- [ ] **TBD: Step 2** — Re-render converted MP trajectories with RGB (`generate_mp_rgb.py`). Script needs fix: `env_states` is stored as HDF5 group, not array. Need to handle nested state dict format for `set_state_dict()`.
+- [ ] **TBD: Step 3** — Convert to LeRobot format (`convert_maniskill_to_lerobot.py --demo-dir ~/.maniskill/demos_mp`)
+- [ ] **TBD: Step 4** — Upload to Hopper, compute new norm stats, retrain LoRA
+- [x] Scripts created: `generate_mp_rgb.py`, `generate_mp_dataset.sh`, updated `convert_maniskill_to_lerobot.py` (added `--demo-dir` flag)
+
+### Mar 24 (Mon) — NaN Debugging + Normalization Fix + Pipeline Video + Project Direction
+
+#### Training NaN Debugging
+
+- [x] v2 training (MP data) produced NaN at step 0 on Hopper
+- [x] Confirmed data is clean (no NaN/Inf in dataset or norm stats)
+- [x] Confirmed `use_quantile_norm=False` still produces NaN → pi0.5 requires quantile normalization
+- [x] Confirmed widening q01/q99 to min range 0.2 still produces NaN
+- [x] **Root cause**: MP motion planner keeps gripper orientation fixed → rotation deltas ~±0.04 → quantile norm with MP's own ranges amplifies gradients → NaN
+- [x] Confirmed RL dataset still trains successfully with current config → issue is MP-specific
+- [x] **Fix (D15)**: Use RL data's normalization stats (q01/q99 ranges [-1, 1]) for MP data. Small MP values map to small normalized values, matching pi0.5's expected input distribution
+- [x] Verified fix works: Step 0 produces real loss on interactive GPU node
+- [x] v3 training submitted on Hopper A100 40GB (batch_size=32, 20K steps, RL norm stats + MP data)
+
+#### Pipeline Visualization
+
+- [x] Created `record_pipeline_video.py` — smooth 20fps video of full pipeline
+- [x] Recorded video: SuGaR meshes → AnyGrasp (10 grasps) → motion-planned pick-and-place
+- [x] Tested textured meshes — SuGaR textures are too dark (baked lighting). Solid colors used instead.
+- [x] Video: `logs/pipeline_video/full_pipeline.mp4` (9.1s, 181 frames)
+
+#### Texture Quality (Parallel Investigation — Non-Blocking)
+
+- [ ] SuGaR texture extraction bakes lighting into albedo → dark textures in simulation
+- [ ] Options to investigate: relighting, albedo extraction, different reconstruction, or accept solid colors
+- [ ] **Not blocking**: solid colors work for benchmark. Texture improvement is a quality enhancement.
+
+#### Project Direction (Prof Xiao Guidance)
+
+- Professor advised: the **pipeline + benchmark** is the core contribution, not a novel CL algorithm
+- Standard CL methods (LoRA + replay) are sufficient for experiments
+- Priority: make EvoHome-Bench solid, run thorough experiments, show VLA degradation + mitigation
+- Texture quality is parallel/optional — solid colors are acceptable for controlled benchmarks
+
+---
+
 ## Weeks 7–10 — Apr 27–May 28 | Writing + Polish + Submission
 
 - **Week 7 (Apr 27–May 3):** Supplementary experiments + Method/Bench writing skeleton

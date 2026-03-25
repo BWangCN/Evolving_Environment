@@ -64,16 +64,22 @@
 
 ---
 
-## Stage B-3: 场景编辑与渲染（生成图像）
+## Stage B-3: 渲染训练数据（ManiSkill pipeline — UPDATED Mar 20）
+
+> **MAJOR CHANGE (Mar 20):** Training data rendering now uses ManiSkill, NOT 3DGS scene editing + gsplat.
+> Pipeline: Object 3DGS → SuGaR mesh → ManiSkill import → grasp + trajectory → ManiSkill RT render → (I, a, l).
+> 3DGS scene editing (B8/B9/B10) retained for environment understanding / change detection, NOT for training data.
 
 | ID | 模块 | 状态 | 工具/方案 |
 |----|------|------|-----------|
-| B8 | 物体移除 | ✔️ 已验证 | Gaussian Grouping — bear removed, 764 MB PLY. **重定位未实现**（需自建 SE(3) 变换） |
-| B9 | 空洞填充 (inpainting) | ✔️ 已验证 | Gaussian Grouping (LaMa + 10K fine-tune) — clean result, 2.8 GB PLY |
-| B10 | 物体附着 EE (grasp 中) | ❌ 缺失 | 逐帧对物体 Gaussians 施加 SE(3) 变换 |
-| B11 | 机器人模型渲染 | ❌ 可跳过 | wrist camera 视野中几乎看不到手臂 |
-| B12 | 数据增强 | ❌ 需自建 | camera perturbation, SH modification, pose randomization |
-| B13 | 批量渲染 → (I, a, l) | ✔️ 已验证 | gsplat 1.5.3 — loaded 9.5M Gaussians, rendered 640x480 from arbitrary pose |
+| B8 | 物体移除 | ✔️ 已验证 | Gaussian Grouping — bear removed, 764 MB PLY. Retained for env change detection only |
+| B9 | 空洞填充 (inpainting) | ✔️ 已验证 | Gaussian Grouping (LaMa + 10K fine-tune). Retained for env change detection only |
+| ~~B10~~ | ~~物体附着 EE~~ | ~~删除~~ | ~~不再需要 — ManiSkill handles robot + object physics~~ |
+| ~~B11~~ | ~~机器人模型渲染~~ | ~~删除~~ | ~~不再需要 — ManiSkill renders robot natively~~ |
+| B12 | 数据增强 | ❌ 需自建 | ManiSkill-side: camera perturbation, object pose randomization, lighting variation |
+| B13 | ManiSkill RT 渲染 → (I, a, l) | ✔️ 已验证 | ManiSkill 3.0 RT rendering + trajectory execution → image + action + language triplets |
+| B14 | Object 3DGS → SuGaR mesh → ManiSkill import | ✔️ 已验证 | Full pipeline: 3DGS → mesh → textured .obj + collision hull → SAPIEN actor (Mar 19-20) |
+| B15 | Semantic trajectory templates | ❌ 需自建 | Hard-coded template system: object functional roles → multi-step task sequences (D11) |
 
 ---
 
@@ -102,8 +108,8 @@ Week 1: 锁定决策 + A1/A2/A3 跑通 + 代码模块 + 组件安装验证  ← 
   ✔️ A1/A2/A3 verified, B6*/B7/B1/B2/C3/D1 code complete (74 tests)
   ✔️ B8/B9 (removal+inpainting) verified, B13 (gsplat rendering) verified
   ✔️ AnyGrasp env ready (license pending), π0.5 inference verified
-Week 2: B4 (AnyGrasp license → test) + B8 relocation (custom SE(3)) + first (I,a,l) triplets
-Week 3: B10 (EE attach) + B12 (augmentation) → full E1 synthetic data
-Week 4: C1 (LoRA+TFA on π0.5)
-Week 5+: C2
+Week 2: B15 (semantic templates) + finalize object set + first (I,a,l) triplets from ManiSkill
+Week 3: B12 (augmentation) + full E1 synthetic data + first π0.5 LoRA attempt
+Week 4: C1 (LoRA+TFA on π0.5) + E2 data
+Week 5+: C2 (env bank) + scale to E1-E5
 ```

@@ -63,7 +63,9 @@ def maniskill_obs_to_pi05(
 
     Args:
         obs: ManiSkill observation dict with 'agent' and 'extra' keys.
-        frame: RGB render from env.render(), uint8 numpy array (H, W, 3).
+        frame: RGB image, uint8 numpy array (H, W, 3).
+            Prefer using obs sensor camera (base_camera) over env.render()
+            to match training data viewpoint.
         prompt: Language instruction string.
         image_size: Target image size for π0.5 (default 224).
 

@@ -97,7 +97,13 @@
 - [x] π0.5 → ManiSkill integration verified (policy server + client, action format mapping)
 - [x] ManiSkill dataset generation: 4 tasks × 2000 demos, fresh RL policy rollouts + RT rendering + language instructions
 - [x] Convert ManiSkill demos to LeRobot v2.1 format (Mar 18, 8000 eps, 94865 frames, verified)
-- [ ] Submit π0.5 LoRA fine-tuning on ManiSkill to Hopper
+- [x] Submit π0.5 LoRA fine-tuning on ManiSkill to Hopper — **DONE Mar 22**
+  - [x] Hopper environment fully set up (uv, JAX, openpi, dataset, checkpoint)
+  - [x] Custom `LeRobotManiSkillDataConfig` + `pi05_maniskill_lora` config created
+  - [x] Norm stats computed
+  - [x] LoRA training verified end-to-end on 40GB MIG slice
+  - [x] Full finetuning confirmed OOM on 40GB (needs A100 80GB) — LoRA is the right approach
+  - [x] Production SLURM job submitted (A100 80GB, batch_size=64, 20K steps, ~30 hours)
 - [ ] Prototype custom EvoHome task definitions in ManiSkill (multi-step, LIBERO-Long-style)
 
 ### LIBERO Evolving Environment Benchmark — **Assigned to Sal Yang** (NEW, Mar 18)
@@ -108,7 +114,7 @@
 - [ ] Test baseline VLAs (π0.5, π0) on evolved environments → measure performance degradation
 - [ ] Document benchmark protocol: tasks per environment, evaluation episodes, success criteria
 
-**✅ Checkpoint: Real grasp poses + scene editing + first rendered training images + ManiSkill dataset generated + LIBERO benchmark construction started**
+**✅ Checkpoint: Real grasp poses + scene editing + first rendered training images + ManiSkill dataset generated + Hopper LoRA finetuning submitted + LIBERO benchmark construction started**
 
 ---
 
@@ -119,10 +125,14 @@
 - [ ] Generate full E1 dataset (hundreds of trajectories)
 - [ ] Data augmentation: camera perturbation, object pose randomization, lighting
 
-### VLA Baseline (5090 → Hopper A100)
+### VLA Baseline (5090 → Hopper A100) — PARTIALLY DONE (pulled forward from Week 3)
 - [ ] π0.5 zero-shot inference sanity check (5090 first, then migrate to Hopper)
-- [ ] First LoRA finetune attempt on E1 synthetic data (Hopper A100)
-- [ ] Sanity check: finetuned model improves over zero-shot on E1?
+- [x] First LoRA finetune on ManiSkill RL data (Hopper A100) — **completed Mar 22-23**
+- [x] Evaluated finetuned model on ManiSkill PickCube — **0% success, root cause: RL demo quality**
+- [x] Identified fix: switch to motion planning demos (D13, smoother actions, 5x longer episodes)
+- [x] MP trajectory replay conversion done (PickCube 1000 eps, StackCube 1000 eps, 186K frames total)
+- [ ] **TBD:** Re-render MP trajectories with RGB + convert to LeRobot + retrain LoRA on Hopper
+- [ ] First LoRA finetune on E1 EvoHome synthetic data (pending E1 data generation)
 
 ### EvoHome-Bench Evaluation Pipeline
 - [ ] Automated evaluation script: load model → run episodes → compute metrics
@@ -227,10 +237,11 @@
 | Risk | When | Mitigation |
 |------|------|------------|
 | 3DGS synthetic data quality too low → VLA degrades | Week 3 | Sanity check: finetune small batch, check trend |
-| AnyGrasp license or compatibility issues | Week 2 | Fallback: Contact-GraspNet (fully open source) |
+| ~~AnyGrasp license or compatibility issues~~ | ~~Week 2~~ | **RESOLVED**: License received Mar 18, working on 5090 |
 | Flow matching decoder doesn't respond to TFA | Week 4 | Fallback: standard LoRA on decoder |
 | Planner trajectories too different from π0.5 pretraining distribution | Week 3 | Expected to be a feature, not bug; ablation in Week 6 |
 | Not enough sequential environments for convincing CL story | Week 5 | Prioritize diverse object types over sheer environment count |
 | ~~OmniGibson setup issues on 5090~~ | ~~Week 1-2~~ | **RESOLVED**: OmniGibson only for eval; ManiSkill as A100-compatible alternative |
 | OmniGibson incompatible with A100 (no RT Cores) | Week 2 | Option A: OmniGibson on 5090 (serial eval); Option B: ManiSkill on Hopper (GPU-parallel) |
+| Hopper A100 80GB queue wait times | Week 2+ | Use A100 40GB for LoRA (fits with batch_size=32); reserve 80GB for full finetuning baselines |
 | Not enough writing time | Week 10 | Start skeletons Week 7; all figures/tables final by Week 8 |

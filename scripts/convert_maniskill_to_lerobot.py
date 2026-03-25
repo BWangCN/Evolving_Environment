@@ -43,6 +43,7 @@ def convert(
     repo_name: str = REPO_NAME,
     max_episodes: int | None = None,
     demo_filename: str = "demos_2000.h5",
+    demo_dir: Path | None = None,
 ):
     output_path = HF_LEROBOT_HOME / repo_name
     if output_path.exists():
@@ -84,7 +85,8 @@ def convert(
     total_frames = 0
 
     for task in tasks:
-        h5_path = DEMO_DIR / task / demo_filename
+        base_dir = demo_dir if demo_dir is not None else DEMO_DIR
+        h5_path = base_dir / task / demo_filename
         if not h5_path.exists():
             print(f"WARNING: {h5_path} not found, skipping {task}")
             continue
@@ -148,6 +150,8 @@ if __name__ == "__main__":
                         help="Max episodes per task (for ablation, e.g., 10, 50, 200)")
     parser.add_argument("--demo-filename", type=str, default="demos_2000.h5",
                         help="Demo h5 filename within each task directory")
+    parser.add_argument("--demo-dir", type=str, default=None,
+                        help="Override demo directory (default: ~/.maniskill/demos_fresh)")
     args = parser.parse_args()
 
     convert(
@@ -155,4 +159,5 @@ if __name__ == "__main__":
         repo_name=args.repo_name,
         max_episodes=args.max_episodes,
         demo_filename=args.demo_filename,
+        demo_dir=Path(args.demo_dir) if args.demo_dir else None,
     )

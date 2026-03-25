@@ -1,6 +1,6 @@
 # 3DGS-EvoHome Technical Decisions
 
-> **Last Updated:** March 19, 2026 (MAJOR: drop 3DGS as core tech → per-object scanning + VGGT, method-agnostic framework)
+> **Last Updated:** March 24, 2026 (Normalization fix D15, camera D14, MP demos D13)
 > **Synced with:** [3DGS_Timeline.md](3DGS_Timeline.md) | [progress.md](progress.md) | [pipeline_gap_analysis.md](pipeline_gap_analysis.md)
 
 ---
@@ -64,12 +64,12 @@
   - Both validate "digital twin → sim" approach but neither does learning or CL
 - **Date:** Mar 16 (3DGS core), Mar 17 (3DGS verified), Mar 19 AM (3DGS as digitizer), **Mar 19 PM (MAJOR: drop 3DGS as core, per-object VGGT, method-agnostic)**
 
-### D4. Development Environment (UPDATED Mar 17)
+### D4. Development Environment (UPDATED Mar 22)
 - **Windows 4080 (local):** Documentation, code modules (no GPU deps), quick iteration
-- **Linux 5090 (dev machine):** **Primary dev — 3DGS, AnyGrasp, π0.5 inference, OmniGibson eval** (has RT Cores)
-- **GMU Hopper (A100 cluster):** VLA finetuning (LoRA + TFA), gsplat batch rendering at scale
+- **Linux 5090 (dev machine):** **Primary dev — 3DGS, AnyGrasp, π0.5 inference, ManiSkill data gen** (has RT Cores)
+- **GMU Hopper (A100 cluster):** VLA finetuning (LoRA + TFA), gsplat batch rendering at scale — **VERIFIED Mar 22**
 - **Strategy:** 5090 先跑通最小 E2E pipeline → 迁移 Hopper 做 scale
-- **Hopper storage:** HOME (code, 60GB) / SCRATCH (envs + weights, unlimited, 90d purge) / PROJECTS (results, 1TB)
+- **Hopper storage:** HOME (code, ~57GB quota) / SCRATCH (data + weights + checkpoints, shared 390TB, 90d purge)
 - **5090 Environment Details (verified Mar 17):**
   - RTX 5090: Blackwell architecture, SM 120 (compute capability 12.0), 32 GB VRAM
   - System CUDA: 13.1 (driver 590.48.01) — **required for gsplat JIT** (conda CUDA 12.4 doesn't support SM 120)
@@ -78,19 +78,28 @@
   - openpi `.venv`: Python 3.11, JAX 0.5.3, PyTorch 2.7.1 (separate env, uv-managed)
     - Checkpoint cached at `~/.cache/openpi/`
   - **Cannot run GG inpainting + π0.5 inference simultaneously** (each uses 12-27 GB VRAM)
-- **Date:** Mar 16–17, 2026
+- **Hopper Environment Details (verified Mar 22):**
+  - A100 80GB (MIG slices: 3g.40gb for interactive, A100.80gb for batch via sbatch)
+  - CUDA 12.6, driver 560.35.05
+  - openpi `.venv`: Python 3.11, JAX 0.5.3 (uv-managed, `uv sync --no-install-package rerun-sdk`)
+  - Dataset: `/scratch/bwang25/maniskill_pi05/` (13GB, symlinked to `$HF_HOME/lerobot/`)
+  - Checkpoint: `/scratch/bwang25/openpi_cache/openpi-assets/checkpoints/pi05_base/` (11.6GB)
+  - Training checkpoints: `/scratch/bwang25/checkpoints/`
+  - Logs: `/scratch/bwang25/logs/`
+  - **Known issues:** rerun-sdk incompatible (glibc 2.28); SSL_CERT_FILE must be set for GCS; `$HF_HOME=/scratch/bwang25/hf_cache`
+- **Date:** Mar 16–17, 2026 (Hopper verified Mar 22)
 
 ---
 
-### D5. Simulation Environment — ManiSkill 3 — DECIDED Mar 17
-- **Choice:** ManiSkill 3 (SAPIEN/Vulkan) for evaluation + visualization
+### D5. Simulation Environment — ManiSkill 3 — UPDATED Mar 20
+- **Choice:** ManiSkill 3 (SAPIEN/Vulkan) for **both data synthesis AND evaluation**
 - **Why not OmniGibson:** Isaac Sim 4.5 crashes on RTX 5090 (Blackwell). OmniGibson's Isaac Sim 5.0 migration has no ETA.
 - **ManiSkill advantages:** Works on 5090 now, has RT rendering mode (`rt-fast`), Franka Panda default, 2K+ objects (YCB, PartNet), GPU-parallel evaluation on A100
 - **ManiSkill limitations:** Fewer household assets than BEHAVIOR-1K (2K vs 9K), RT mode is single-env only
 - **Installation (Mar 17):** ManiSkill 3.0.0b22 installed in `gaussian_grouping` conda env. PickCube-v1 verified with rt-fast shader on 5090.
-- **Data synthesis pipeline (REVISED Mar 19):** 3DGS → export mesh → ManiSkill (trajectory execution + rendering). ManiSkill IS now in the data synthesis loop (handles all rendering + physics). gsplat no longer used for training image rendering.
+- **Data synthesis pipeline (REVISED Mar 19):** Per-object scan → mesh → ManiSkill (trajectory execution + rendering). ManiSkill handles all rendering + physics. gsplat no longer used for training image rendering.
 - **Future option:** Migrate to OmniGibson when Isaac Sim 5.0 port lands (richer assets, better photorealism)
-- **Date:** Mar 16–17, 2026
+- **Date:** Mar 16–17, 2026 (updated Mar 20)
 
 ### D6. Grasp Model — AnyGrasp — INSTALLED Mar 17
 - **Choice:** AnyGrasp (T-RO 2023)
@@ -144,21 +153,29 @@
   - No COLMAP, no Gaussian Grouping, no gsplat, no SuGaR, no SAM
   - 2 minutes per object (VGGT) vs 45 minutes (3DGS pipeline)
   - Reconstruction method is pluggable (VGGT / 3DGS / Hunyuan3D)
-- **Key advantages over Li et al. / SyncTwin:**
-  - They do planning (zero-shot, 12-93% success); we do learning (VLA adapts over time)
-  - They need RGB-D sensor for pose alignment; our turntable setup needs only RGB
-  - We address continual adaptation; they don't
 - **Object Library replaces 3DGS Environment Bank:**
   - Store: per-object mesh + texture + metadata (size, category, affordances)
   - Store: per-environment layout snapshot (object IDs + poses)
   - Replay: reload any historical environment in sim from stored objects + layout
-  - Simpler than storing 3DGS scenes, more flexible (remix objects across environments)
-- **Paper contributions (updated):**
-  1. Problem definition: evolving environment CL for VLAs (+ EvoHome-Bench)
-  2. Digital twin framework: scan → reconstruct → sim → synthesize data (method-agnostic)
-  3. Decoupled CL: per-env LoRA + TFA + CARS + Object Library replay
-  4. Ablation: VGGT vs 3DGS vs Hunyuan3D as reconstruction backends
 - **Date:** Mar 19, 2026
+
+### D10b. Object Selection — Graspable Convex + Semantic Targets — DECIDED Mar 20
+- **Constraint 1:** Panda gripper max opening = 80mm.
+- **Constraint 2:** SuGaR mesh extraction fails on concave objects (bowl, mug).
+- **Decision:** Select convex objects < 70mm for grasping. Concave objects as semantic destinations (use GT meshes).
+- **Graspable candidates:** 005_tomato_soup_can (69mm), 011_banana (38mm), 004_sugar_box (49mm), 006_mustard_bottle (60mm), 010_potted_meat_can (59mm), 014_lemon (53mm), 016_pear (66mm)
+- **Semantic targets:** 024_bowl, 029_plate (containers)
+- **Date:** Mar 20, 2026
+
+### D11. Functional Semantic Digital Twins — DECIDED Mar 20
+- **Thesis:** Digital twins require geometry + appearance + **functional semantics** to enable meaningful trajectory synthesis.
+- **Implementation:** Hard-coded template system mapping {object roles + spatial layout} → semantic task sequences.
+- **Date:** Mar 20, 2026
+
+### D12. Training Data Rendering — ManiSkill (NOT 3DGS) — DECIDED Mar 20
+- **Choice:** ManiSkill simulator renders training images (I, a, l) triplets.
+- **Current pipeline:** Object scan → mesh → ManiSkill import → AnyGrasp → trajectory → ManiSkill RT rendering → training data
+- **Date:** Mar 20, 2026
 
 ---
 
@@ -171,9 +188,34 @@
 - **Candidates:** LLM template expansion, manual template library
 - **Target:** Week 2
 
-### P5. LoRA Rank
-- **Candidates:** r = 8, 16, 32
-- **Target:** Week 3-4 (empirical tuning)
+### D13. Training Data Source — Motion Planning Demos (NOT RL Policy) — DECIDED Mar 23
+- **Choice:** Use ManiSkill motion planning demonstrations for base VLA finetuning
+- **Why not RL policy demos:** RL actions saturate at ±1.0, only 17 steps/episode, 30x less smooth than MP. pi0.5's 10-step action chunking gets only 1-2 replanning cycles per RL episode. Quantile normalization ineffective on already-saturated data. Finetuned model produced 0% success on PickCube.
+- **MP advantages:** 77 steps avg (4.5x longer), smooth deltas matching LIBERO distribution, 8.5x more training samples per episode
+- **Available tasks:** PickCube-v1 (1000 eps), StackCube-v1 (1000 eps). PullCube/LiftPegUpright have no MP demos — may generate custom or skip.
+- **Pipeline:** MP trajectory.h5 → ManiSkill replay tool (→ pd_ee_delta_pose) → re-render RGB → LeRobot → Hopper training
+- **Date:** Mar 23, 2026
+
+### D15. Normalization Strategy — RL Quantile Ranges for MP Data — DECIDED Mar 24
+- **Choice:** Use RL data's normalization statistics (q01/q99) for quantile normalization of MP training data
+- **Why:** pi0.5 was pre-trained with quantile normalization. Disabling it causes NaN (model expects quantile-normalized inputs). MP data has near-zero rotation deltas (±0.04) that create extreme scaling when using MP's own q01/q99. Using RL's wide ranges ([-1, 1]) acts as a pass-through: small MP values stay small after normalization, matching what the model expects.
+- **Root cause chain:** MP motion planner keeps gripper orientation fixed (pointing down) → rotation deltas ~0 → tiny q01/q99 range → quantile norm amplifies 25x+ → gradient explosion → NaN at step 0
+- **Debugging history:** (1) Tried `use_quantile_norm=False` → NaN (pi0.5 requires quantile norm). (2) Tried widening q01/q99 to min range 0.2 → still NaN. (3) Using RL ranges works because they match pi0.5's pre-training distribution.
+- **Implication for EvoHome data:** Future trajectory planner data should include diverse rotations. If rotation ranges are still small, use the same RL/LIBERO-scale normalization stats.
+- **Date:** Mar 24, 2026
+
+### D14. Camera Setup — Single Third-Person View (No Wrist Camera) — DECIDED Mar 23
+- **Choice:** Use single third-person exterior camera for all training and evaluation. No wrist camera.
+- **Why:** Standard for simulation VLA evaluation — RT-2, OpenVLA, and most SIMPLER/LIBERO evaluations use single third-person view. Wrist camera is a real-robot convention (DROID, ALOHA hardware), not a simulation requirement. pi0.5 handles missing cameras gracefully (zero-padded + masked).
+- **Camera position:** DROID-style over-right-shoulder angle (verified in `logs/camera_test/exterior_right.png`)
+- **If reviewers ask:** Can add wrist camera as follow-up experiment. LIBERO-Plus showed it improves robustness but is not required.
+- **Date:** Mar 23, 2026
+
+### P5. LoRA Rank — PARTIALLY RESOLVED Mar 22
+- **Default:** openpi's `gemma_2b_lora` uses rank 16 for VLM, rank 32 for action expert (verified from weight shapes on Hopper)
+- **Candidates for ablation:** r = 8, 16, 32
+- **First training run:** Using default ranks (r=16 VLM, r=32 action expert)
+- **Target:** Week 3-4 (empirical tuning, ablation in Week 6)
 
 ### P6. TFA Residual Architecture
 - **Open questions:** MLP vs shallow transformer? How many parameters?
