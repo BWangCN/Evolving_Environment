@@ -1,0 +1,24 @@
+Object                         Shape                L×W×H (m)                        MaxDim  Mass kg   Diff
+-----------------------------------------------------------------------------------------------------------
+008_pudding_box                rectangular_box      0.114×0.064×0.073                 11.4cm   0.187kg   1.0
+002_master_chef_can            cylinder             0.102×0.102×0.140                 14.0cm   0.414kg   1.2
+005_tomato_soup_can            cylinder             0.068×0.068×0.102                 10.2cm   0.349kg   1.2
+004_sugar_box                  rectangular_box      0.092×0.092×0.174                 17.4cm   0.514kg   1.5
+003_cracker_box                rectangular_box      0.161×0.055×0.213                 21.3cm   0.411kg   2.2
+010_potted_meat_can            rectangular_can      0.097×0.053×0.053                  9.7cm   0.370kg   2.2
+009_gelatin_box                rectangular_box      0.086×0.055×0.073                  8.6cm   0.097kg   2.5
+024_bowl                       open_hemisphere      0.162×0.162×0.055                 16.2cm   0.147kg   3.5
+013_apple                      irregular_sphere     0.077×0.064×0.059                  7.7cm   0.068kg   4.5
+007_tuna_fish_can              flat_cylinder        0.085×0.085×0.033                  8.5cm   0.171kg   5.0
+
+Difficulty rationale:
+  008_pudding_box: standard shape, no major penalties
+  002_master_chef_can: smooth cylindrical surface
+  005_tomato_soup_can: smooth cylindrical surface
+  004_sugar_box: heavy (514 g) → needs firm grip
+  003_cracker_box: narrow face (5.5 cm); elongated (aspect 3.9:1)
+  010_potted_meat_can: narrow face (5.3 cm); low profile (5.3 cm tall)
+  009_gelatin_box: narrow face (5.5 cm); very light (97 g) → sensitive to contact force
+  024_bowl: narrow face (5.5 cm); low profile (5.5 cm tall); rim-only grasp, tilt-sensitive
+  013_apple: narrow face (5.9 cm); low profile (5.9 cm tall); very light (68 g) → sensitive to contact force; smooth convex surface, rolls freely
+  007_tuna_fish_can: very narrow face (3.3 cm); very low profile (3.3 cm tall); flat cylinder — rim grasp required
