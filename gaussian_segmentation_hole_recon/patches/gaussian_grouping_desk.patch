@@ -1,0 +1,34 @@
+diff --git a/edit_object_inpaint.py b/edit_object_inpaint.py
+index 575fa18..33f4526 100644
+--- a/edit_object_inpaint.py
++++ b/edit_object_inpaint.py
+@@ -152,9 +152,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
+         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+ 
++    if len(views) == 0:
++        return
+     out_path = os.path.join(render_path[:-8],'concat')
+     makedirs(out_path,exist_ok=True)
+-    fourcc = cv2.VideoWriter.fourcc(*'DIVX') 
++    fourcc = cv2.VideoWriter.fourcc(*'DIVX')
+     size = (gt.shape[-1]*5,gt.shape[-2])
+     fps = float(5) if 'train' in out_path else float(1)
+     writer = cv2.VideoWriter(os.path.join(out_path,'result.mp4'), fourcc, fps, size)
+diff --git a/edit_object_removal.py b/edit_object_removal.py
+index af410ee..875d8ab 100644
+--- a/edit_object_removal.py
++++ b/edit_object_removal.py
+@@ -125,9 +125,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
+         torchvision.utils.save_image(rendering, os.path.join(render_path, '{0:05d}'.format(idx) + ".png"))
+         torchvision.utils.save_image(gt, os.path.join(gts_path, '{0:05d}'.format(idx) + ".png"))
+ 
++    if len(views) == 0:
++        return
+     out_path = os.path.join(render_path[:-8],'concat')
+     makedirs(out_path,exist_ok=True)
+-    fourcc = cv2.VideoWriter.fourcc(*'DIVX') 
++    fourcc = cv2.VideoWriter.fourcc(*'DIVX')
+     size = (gt.shape[-1]*5,gt.shape[-2])
+     fps = float(5) if 'train' in out_path else float(1)
+     writer = cv2.VideoWriter(os.path.join(out_path,'result.mp4'), fourcc, fps, size)
