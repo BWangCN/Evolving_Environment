@@ -1,0 +1,83 @@
+# ==========================================================================
+# Mouse 3DGS — keep the repo CODE + DOCS only.
+# Everything large or regenerable is excluded and moved out-of-band
+# (see docs/MIGRATION.md).
+# ==========================================================================
+
+# --- Gaussian / point-cloud artifacts (multi-GB, never in git) ---
+*.ply
+*.splat
+*.pcd
+*.npz
+# The persisted desk plane is small but is DATA, not code — moved with the data.
+desk_plane.npy
+*.npy
+
+# --- Training outputs / experiment dirs ---
+output/
+outputs/
+*_viewer/
+point_cloud/
+chkpnt*.pth
+*.pth
+*.ckpt
+*.safetensors
+
+# --- Captures & derived frames ---
+*.MOV
+*.mov
+*.mp4
+*.MP4
+*.png
+*.jpg
+*.jpeg
+images/
+input/
+frames/
+undistorted/
+
+# --- COLMAP intermediates (regenerable) ---
+sparse/
+dense/
+database.db
+*.bin
+distorted/
+
+# --- Masks / weights ---
+masks/
+*mask*/
+big-lama/
+lama/
+*.pt
+
+# --- Python / conda ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+env/
+venv/
+.venv/
+# conda envs should live in the conda dir, never inside the repo — but just in case:
+envs/
+
+# --- Editor / OS ---
+.vscode/
+.idea/
+.DS_Store
+*.swp
+*~
+
+# --- Logs ---
+*.log
+wandb/
+runs/
+events.out.tfevents.*
+
+# ==========================================================================
+# NOTE: if `git status` still shows anything multi-MB after adding this file,
+# it was already tracked — untrack it with:  git rm --cached <file>
+# ==========================================================================

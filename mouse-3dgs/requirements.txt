@@ -1,0 +1,33 @@
+# Python-side deps for the GAUSSIAN GROUPING env ONLY (gaussian_grouping).
+# NOTE: torch/torchvision are NOT pinned here — they must match the machine's CUDA.
+# Install torch FIRST via the command in the README (GPU-specific), THEN this file.
+#
+# The two CUDA extensions (diff-gaussian-rasterization, simple-knn) are NOT installed
+# from here — they compile against your torch/CUDA and are handled in the README's
+# build step (with the sm_89 / cfloat notes).
+#
+# ENV ISOLATION: the masking front-half (stages 1+3, docs/PIPELINE.md) runs in its OWN
+# `seedo` env, installed from SeeDo's own requirements.txt inside the SeeDo checkout —
+# do NOT merge those deps in here. Stage 1 (video convert) additionally needs `ffmpy`
+# (+ system ffmpeg) in the seedo env.
+
+# --- core scientific stack ---
+numpy
+plyfile
+open3d
+opencv-python
+Pillow
+scipy
+tqdm
+matplotlib
+
+# --- Gaussian Grouping / segmentation side ---
+# SAM (Segment Anything) for mask generation
+# (installed from the SAM repo per README; listed here for reference)
+# segment-anything
+
+# --- inpainting (final stage) ---
+# LaMa / big-lama is pulled separately per README; deps it needs:
+scikit-image
+einops
+kornia
