@@ -90,6 +90,11 @@ Paired per-object deltas (same episodes); every claim, incl. the honest negative
 - [transient-slip — Marc Anthony conditioner bottle tilts (19°)](../figures/rollout_slip.mp4)
 - [lifted-dropped — Krill Oil bottle rises out of the gripper (95°)](../figures/rollout_drop.mp4)
 
+**Predicted vs ground truth** — the trained rollout WM's own predictions (`render_pred.py`; gripper frame, K=10 window): GT object = blue oriented box + cloud, the model's N=8 samples = orange boxes. The predicted **spread grows with outcome uncertainty** — visualizing the *calibrated distribution over near-term futures*:
+- [rigid — samples cluster tight on the GT (confident hold)](../figures/rollout_pred_rigid.mp4)
+- [transient-slip — moderate spread](../figures/rollout_pred_slip.mp4)
+- [lifted-dropped — wide spread (uncertain, multimodal)](../figures/rollout_pred_drop.mp4)
+
 ## Terminology (models & metrics)
 Precise definitions (for manuscript use).
 
