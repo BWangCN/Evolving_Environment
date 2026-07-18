@@ -109,20 +109,18 @@ Precise definitions (for manuscript use).
 | Kendall (uncertainty) weighting | Multi-task loss weighting that learns each task's weight from a homoscedastic-uncertainty parameter, avoiding hand-tuned loss coefficients. | — |
 
 ## Model & data
-Release locations as in [01](01_rigid_gripper_contraction.md): HF model repo
-[BWangCN/cdwm-world-model](https://huggingface.co/BWangCN/cdwm-world-model), HF dataset
-[BWangCN/cdwm-grasp-dataset](https://huggingface.co/datasets/BWangCN/cdwm-grasp-dataset), code under GitHub
-[Evolving_Environment/cdwm-world-model](https://github.com/BWangCN/Evolving_Environment/tree/main/cdwm-world-model).
-*(URLs anticipated — confirm on release.)*
+Release locations as in [01](01_rigid_gripper_contraction.md): model weights + code in GitHub
+[Evolving_Environment/cdwm-world-model](https://github.com/BWangCN/Evolving_Environment/tree/main/cdwm-world-model);
+dataset on Hugging Face [BWangCN/cdwm-grasp-dataset](https://huggingface.co/datasets/BWangCN/cdwm-grasp-dataset).
 
-**Weights** (HF model repo)
-- [`slip/classifier_full.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/slip/classifier_full.pt) — 5-way + 2-tier outcome classifier
-- [`slip/mdn_full.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/slip/mdn_full.pt) — **MAIN** (mixture-density world model)
-- [`slip/mdn_pose.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/slip/mdn_pose.pt) — pose-only control
-- [`slip/traj_full.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/slip/traj_full.pt) — labeled mode-mixture baseline
-- [`validations/joint_full.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/validations/joint_full.pt) — joint MDN + boolean
-- [`validations/roll_full.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/validations/roll_full.pt) — short-window rollout WM
-- [`validations/roll_pose.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/validations/roll_pose.pt) — pose-only control
+**Weights** (GitHub, in `cdwm-world-model/models/`)
+- [`models/02_slip_contact/classifier_full.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/classifier_full.pt) — 5-way + 2-tier outcome classifier
+- [`models/02_slip_contact/mdn_full.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/mdn_full.pt) — **MAIN** (mixture-density world model)
+- [`models/02_slip_contact/mdn_pose.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/mdn_pose.pt) — pose-only control
+- [`models/02_slip_contact/traj_full.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/traj_full.pt) — labeled mode-mixture baseline
+- [`models/02_slip_contact/validations/joint_full.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/validations/joint_full.pt) — joint MDN + boolean
+- [`models/02_slip_contact/validations/roll_full.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/validations/roll_full.pt) — short-window rollout WM
+- [`models/02_slip_contact/validations/roll_pose.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/02_slip_contact/validations/roll_pose.pt) — pose-only control
 
 **Code** (GitHub)
 - models: [`wm/classifier.py`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/wm/classifier.py), [`wm/trajnet.py`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/wm/trajnet.py) (MDN + joint), [`wm/dit_rollout.py`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/wm/dit_rollout.py)

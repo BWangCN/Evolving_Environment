@@ -18,3 +18,7 @@ wandb/
 eval_hf_*.json
 **/test_pred.npz
 **/metrics.npz
+
+# ship released model weights (override the *.pt/*.npz ignores above)
+!models/**/*.pt
+!models/**/*.npz

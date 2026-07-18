@@ -50,15 +50,14 @@ Precise definitions (for manuscript use). Each ladder rung adds one change to th
 | geodesic° | The **geodesic angular distance on SO(3)** between predicted and ground-truth object rotation, in degrees (lower = better). | — |
 
 ## Model & data
-Release locations: HF model repo [BWangCN/cdwm-world-model](https://huggingface.co/BWangCN/cdwm-world-model), HF dataset
-[BWangCN/cdwm-grasp-dataset](https://huggingface.co/datasets/BWangCN/cdwm-grasp-dataset), code under GitHub
-[Evolving_Environment/cdwm-world-model](https://github.com/BWangCN/Evolving_Environment/tree/main/cdwm-world-model).
-*(URLs are the anticipated release targets — confirm/adjust once the PRs are merged.)*
+Release locations: model weights + code in GitHub
+[Evolving_Environment/cdwm-world-model](https://github.com/BWangCN/Evolving_Environment/tree/main/cdwm-world-model);
+dataset on Hugging Face [BWangCN/cdwm-grasp-dataset](https://huggingface.co/datasets/BWangCN/cdwm-grasp-dataset).
 
-**Weights** (HF model repo)
-- [`rigid/local_geo.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/rigid/local_geo.pt) — best config (3.46°)
-- [`rigid/base_hf.pt`](https://huggingface.co/BWangCN/cdwm-world-model/blob/main/rigid/base_hf.pt) — baseline
-- [`norm_stats/`](https://huggingface.co/BWangCN/cdwm-world-model/tree/main/norm_stats) — z-score statistics
+**Weights** (GitHub, in `cdwm-world-model/models/`)
+- [`models/01_rigid_gripper/local_geo.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/01_rigid_gripper/local_geo.pt) — best config (3.46°)
+- [`models/01_rigid_gripper/base_hf.pt`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/models/01_rigid_gripper/base_hf.pt) — baseline
+- [`models/norm_stats/`](https://github.com/BWangCN/Evolving_Environment/tree/main/cdwm-world-model/models/norm_stats) — z-score statistics
 
 **Code** (GitHub)
 - model: [`wm/dit.py`](https://github.com/BWangCN/Evolving_Environment/blob/main/cdwm-world-model/wm/dit.py)
